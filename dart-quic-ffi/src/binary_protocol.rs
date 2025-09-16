@@ -226,20 +226,44 @@ impl MessageSerializer {
     /// 
     /// Design principles:
     /// 1. All messages are fixed 32 bytes for fast transmission and parsing
-    /// 2. Basic types (bool, u64) are directly embedded in Payload
-    /// 3. Complex types (Bytes, String) are passed through pointers for zero-copy
-    /// 4. No copying of long data, maintains high performance
+    /// 2. Little-endian byte order for cross-platform compatibility with Dart
+    /// 3. Basic types (bool, u64) are directly embedded in Payload
+    /// 4. Complex types (Bytes, String) are passed through pointers for zero-copy
+    /// 5. No copying of long data, maintains high performance
     pub fn serialize(msg: &TaskEventMessage) -> Vec<u8> {
-        let msg_size = std::mem::size_of::<TaskEventMessage>();
-        let mut buffer = Vec::with_capacity(msg_size);
+        let mut buffer = Vec::with_capacity(32);
         
-        // Serialize the entire message structure (32 bytes)
+        // Serialize header with explicit little-endian byte order
+        buffer.extend_from_slice(&msg.header.magic.to_le_bytes());      // 4 bytes
+        buffer.push(msg.header.version);                                // 1 byte
+        buffer.push(msg.header.data_type as u8);                       // 1 byte
+        buffer.extend_from_slice(&(msg.header.status as u16).to_le_bytes()); // 2 bytes
+        buffer.extend_from_slice(&msg.header.task_id.to_le_bytes());   // 8 bytes
+        
+        // Serialize payload (16 bytes) with explicit little-endian byte order
         unsafe {
-            let msg_bytes = std::slice::from_raw_parts(
-                msg as *const _ as *const u8,
-                msg_size,
-            );
-            buffer.extend_from_slice(msg_bytes);
+            match msg.header.data_type {
+                DataType::None => {
+                    // 16 bytes of zeros
+                    buffer.extend_from_slice(&[0u8; 16]);
+                }
+                DataType::Bool => {
+                    buffer.push(if msg.payload.bool_val { 1 } else { 0 });
+                    buffer.extend_from_slice(&[0u8; 15]); // Padding
+                }
+                DataType::U64 => {
+                    buffer.extend_from_slice(&msg.payload.u64_val.to_le_bytes());
+                    buffer.extend_from_slice(&[0u8; 8]); // Padding
+                }
+                DataType::Bytes => {
+                    buffer.extend_from_slice(&(msg.payload.bytes.ptr as u64).to_le_bytes());
+                    buffer.extend_from_slice(&msg.payload.bytes.len.to_le_bytes());
+                }
+                DataType::String => {
+                    buffer.extend_from_slice(&(msg.payload.string.ptr as u64).to_le_bytes());
+                    buffer.extend_from_slice(&msg.payload.string.len.to_le_bytes());
+                }
+            }
         }
         
         // Note: Do not copy data pointed to by pointers, maintaining zero-copy characteristics
@@ -252,24 +276,96 @@ impl MessageSerializer {
     /// Deserialize binary data to message
     /// 
     /// # Safety
-    /// Caller must ensure data points to valid 32-byte message data
+    /// Caller must ensure data points to valid 32-byte message data with little-endian byte order
     pub unsafe fn deserialize(data: *const u8, len: usize) -> Option<TaskEventMessage> {
-        let msg_size = std::mem::size_of::<TaskEventMessage>();
-        if len < msg_size {
+        if len < 32 {
             return None;
         }
 
-        // Read fixed 32-byte message
-        unsafe {
-            let msg = std::ptr::read(data as *const TaskEventMessage);
-            
-            // Validate protocol integrity
-            if !msg.is_valid() {
-                return None;
-            }
-            
-            Some(msg)
+        // Deserialize header with explicit little-endian byte order
+        let data_slice = unsafe { std::slice::from_raw_parts(data, 32) };
+        
+        let magic = u32::from_le_bytes([data_slice[0], data_slice[1], data_slice[2], data_slice[3]]);
+        let version = data_slice[4];
+        let data_type_raw = data_slice[5];
+        let status = u16::from_le_bytes([data_slice[6], data_slice[7]]);
+        let task_id = u64::from_le_bytes([
+            data_slice[8], data_slice[9], data_slice[10], data_slice[11],
+            data_slice[12], data_slice[13], data_slice[14], data_slice[15]
+        ]);
+        
+        // Validate data_type
+        let data_type = match data_type_raw {
+            0 => DataType::None,
+            1 => DataType::Bool,
+            2 => DataType::U64,
+            3 => DataType::Bytes,
+            4 => DataType::String,
+            _ => return None,
+        };
+        
+        // Validate status
+        let status_enum = match status {
+            0x0000 => TaskStatus::Success,
+            0x0001 => TaskStatus::SuccessWithData,
+            0x0100 => TaskStatus::WorkerShutdown,
+            0x9001 => TaskStatus::UnknownError,
+            0xF001 => TaskStatus::ProtocolError,
+            0xF002 => TaskStatus::VersionMismatch,
+            0xF003 => TaskStatus::CorruptedData,
+            _ => return None,
+        };
+        
+        // Create header
+        let header = MessageHeader {
+            magic,
+            version,
+            data_type,
+            status: status_enum,
+            task_id,
+        };
+        
+        // Validate protocol integrity
+        if magic != PROTOCOL_MAGIC || version != PROTOCOL_VERSION {
+            return None;
         }
+        
+        // Deserialize payload with explicit little-endian byte order
+        let payload = match data_type {
+            DataType::None => DataPayload { u64_val: 0 },
+            DataType::Bool => DataPayload { bool_val: data_slice[16] != 0 },
+            DataType::U64 => {
+                let value = u64::from_le_bytes([
+                    data_slice[16], data_slice[17], data_slice[18], data_slice[19],
+                    data_slice[20], data_slice[21], data_slice[22], data_slice[23]
+                ]);
+                DataPayload { u64_val: value }
+            }
+            DataType::Bytes => {
+                let ptr = u64::from_le_bytes([
+                    data_slice[16], data_slice[17], data_slice[18], data_slice[19],
+                    data_slice[20], data_slice[21], data_slice[22], data_slice[23]
+                ]) as *mut u8;
+                let len = u64::from_le_bytes([
+                    data_slice[24], data_slice[25], data_slice[26], data_slice[27],
+                    data_slice[28], data_slice[29], data_slice[30], data_slice[31]
+                ]) as usize;
+                DataPayload { bytes: BytesData { ptr, len } }
+            }
+            DataType::String => {
+                let ptr = u64::from_le_bytes([
+                    data_slice[16], data_slice[17], data_slice[18], data_slice[19],
+                    data_slice[20], data_slice[21], data_slice[22], data_slice[23]
+                ]) as *mut u8;
+                let len = u64::from_le_bytes([
+                    data_slice[24], data_slice[25], data_slice[26], data_slice[27],
+                    data_slice[28], data_slice[29], data_slice[30], data_slice[31]
+                ]) as usize;
+                DataPayload { string: StringData { ptr, len } }
+            }
+        };
+        
+        Some(TaskEventMessage { header, payload })
     }
     
     /// Get data pointed to by pointer (zero-copy access)

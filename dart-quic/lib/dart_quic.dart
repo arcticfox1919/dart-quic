@@ -1,8 +1,9 @@
-/// Support for doing something awesome.
+/// Support for QUIC protocol implementation in Dart
 ///
-/// More dartdocs go here.
+/// A high-performance QUIC client library with Rust FFI backend
 library;
 
-export 'src/dart_quic_base.dart';
+export 'src/protocol/binary_protocol.dart';
+export 'src/protocol/message_handler.dart';
 
-// TODO: Export any libraries intended for clients of this package.
+// TODO: Export any additional libraries for clients of this package.

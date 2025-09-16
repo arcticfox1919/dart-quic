@@ -1,0 +1,9 @@
+name: quic_build
+description: Build scripts for dart-quic native library
+version: 1.0.0
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  args: ^2.7.0
