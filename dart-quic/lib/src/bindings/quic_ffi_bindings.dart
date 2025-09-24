@@ -46,6 +46,24 @@ class QuicFFIBindings {
   late final _dart_quic_executor_new = _dart_quic_executor_newPtr
       .asFunction<ffi.Pointer<QuicTaskExecutor> Function(int)>();
 
+  /// Initialize QUIC executor runtime (async, returns TaskId for event tracking)
+  int dart_quic_executor_init_runtime(
+    ffi.Pointer<QuicTaskExecutor> executor,
+    int threads,
+  ) {
+    return _dart_quic_executor_init_runtime(executor, threads);
+  }
+
+  late final _dart_quic_executor_init_runtimePtr =
+      _lookup<
+        ffi.NativeFunction<
+          TaskId Function(ffi.Pointer<QuicTaskExecutor>, ffi.UintPtr)
+        >
+      >('dart_quic_executor_init_runtime');
+  late final _dart_quic_executor_init_runtime =
+      _dart_quic_executor_init_runtimePtr
+          .asFunction<int Function(ffi.Pointer<QuicTaskExecutor>, int)>();
+
   /// Submit QUIC task
   int dart_quic_executor_submit_params(
     ffi.Pointer<QuicTaskExecutor> executor,
@@ -104,8 +122,6 @@ class QuicFFIBindings {
       .asFunction<bool Function(ffi.Pointer<QuicTaskExecutor>)>();
 
   /// Release QUIC executor - returns immediately, closes asynchronously
-  ///
-  /// Recommended for main thread calls
   void dart_quic_executor_free(ffi.Pointer<QuicTaskExecutor> executor) {
     return _dart_quic_executor_free(executor);
   }
@@ -118,13 +134,6 @@ class QuicFFIBindings {
       .asFunction<void Function(ffi.Pointer<QuicTaskExecutor>)>();
 
   /// Release QUIC executor - synchronous version (will block)
-  ///
-  /// This function will:
-  /// 1. Gracefully shutdown worker thread (5 second timeout)
-  /// 2. Release all related memory
-  /// 3. Wait for tasks in progress to complete
-  ///
-  /// Warning: This function may block for up to 5 seconds, use with caution on main thread
   void dart_quic_executor_free_sync(ffi.Pointer<QuicTaskExecutor> executor) {
     return _dart_quic_executor_free_sync(executor);
   }
@@ -449,17 +458,13 @@ final class _LDBL12 extends ffi.Struct {
   external ffi.Array<ffi.UnsignedChar> ld12;
 }
 
-final class DartTaskExecutor_QuicCommandHandler extends ffi.Opaque {}
+final class AsyncDartTaskExecutor_QuicCommandHandler extends ffi.Opaque {}
 
 final class MemoryStats extends ffi.Opaque {}
 
-typedef QuicTaskExecutor = DartTaskExecutor_QuicCommandHandler;
-
-/// Dart Native Port type
+typedef QuicTaskExecutor = AsyncDartTaskExecutor_QuicCommandHandler;
 typedef DartPort = ffi.Int64;
 typedef DartDartPort = int;
-
-/// Task ID type
 typedef TaskId = ffi.Uint64;
 typedef DartTaskId = int;
 

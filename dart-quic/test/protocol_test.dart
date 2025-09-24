@@ -102,7 +102,8 @@ void main() {
 
     test('Invalid header detection', () {
       final header = MessageHeader(
-        magic: 0x12345678, // Wrong magic
+        magic: 0x12345678,
+        // Wrong magic
         version: protocolVersion,
         dataType: DataType.none,
         status: TaskStatus.success,
@@ -116,8 +117,6 @@ void main() {
   group('DataPayload Tests', () {
     test('NoDataPayload', () {
       const payload = NoDataPayload();
-      expect(payload.dataType, equals(DataType.none));
-
       final bytes = payload.toBytes();
       expect(bytes.length, equals(16));
       expect(bytes.every((b) => b == 0), isTrue);
@@ -126,9 +125,6 @@ void main() {
     test('BoolDataPayload', () {
       const truePayload = BoolDataPayload(true);
       const falsePayload = BoolDataPayload(false);
-
-      expect(truePayload.dataType, equals(DataType.bool));
-      expect(falsePayload.dataType, equals(DataType.bool));
 
       final trueBytes = truePayload.toBytes();
       final falseBytes = falsePayload.toBytes();
@@ -141,7 +137,6 @@ void main() {
 
     test('U64DataPayload', () {
       const payload = U64DataPayload(0xDEADBEEF12345678);
-      expect(payload.dataType, equals(DataType.u64));
 
       final bytes = payload.toBytes();
       expect(bytes.length, equals(16));
@@ -184,7 +179,7 @@ void main() {
 
   group('TaskEventMessage Tests', () {
     test('No data message', () {
-      final message = TaskEventMessage.noData(123);
+      final message = QuicTaskMessage.noData(123);
 
       expect(message.header.taskId, equals(123));
       expect(message.header.status, equals(TaskStatus.success));
@@ -196,7 +191,7 @@ void main() {
     });
 
     test('Bool data message', () {
-      final message = TaskEventMessage.boolData(456, true);
+      final message = QuicTaskMessage.boolData(456, true);
 
       expect(message.header.taskId, equals(456));
       expect(message.header.status, equals(TaskStatus.successWithData));
@@ -206,7 +201,7 @@ void main() {
     });
 
     test('U64 data message', () {
-      final message = TaskEventMessage.u64Data(789, 0xABCDEF0123456789);
+      final message = QuicTaskMessage.u64Data(789, 0xABCDEF0123456789);
 
       expect(message.header.taskId, equals(789));
       expect(message.header.status, equals(TaskStatus.successWithData));
@@ -219,7 +214,7 @@ void main() {
     });
 
     test('Error message', () {
-      final message = TaskEventMessage.errorMessage(
+      final message = QuicTaskMessage.errorMessage(
         999,
         TaskStatus.unknownError,
         'Something went wrong',
@@ -233,7 +228,7 @@ void main() {
     });
 
     test('Shutdown message', () {
-      final message = TaskEventMessage.shutdownMessage();
+      final message = QuicTaskMessage.shutdownMessage();
 
       expect(message.header.taskId, equals(0));
       expect(message.header.status, equals(TaskStatus.workerShutdown));
@@ -243,7 +238,7 @@ void main() {
 
   group('MessageSerializer Tests', () {
     test('Message serialization/deserialization roundtrip', () {
-      final original = TaskEventMessage.u64Data(12345, 0xFEEDFACECAFEBABE);
+      final original = QuicTaskMessage.u64Data(12345, 0xFEEDFACECAFEBABE);
 
       final serialized = MessageSerializer.serialize(original);
       expect(serialized.length, equals(32));
@@ -267,8 +262,8 @@ void main() {
     });
 
     test('Bool message serialization consistency', () {
-      final trueMessage = TaskEventMessage.boolData(1, true);
-      final falseMessage = TaskEventMessage.boolData(2, false);
+      final trueMessage = QuicTaskMessage.boolData(1, true);
+      final falseMessage = QuicTaskMessage.boolData(2, false);
 
       final trueSerialized = MessageSerializer.serialize(trueMessage);
       final falseSerialized = MessageSerializer.serialize(falseMessage);
@@ -285,12 +280,12 @@ void main() {
 
     test('Message serialization with various data types', () {
       final messages = [
-        TaskEventMessage.noData(1),
-        TaskEventMessage.boolData(2, true),
-        TaskEventMessage.boolData(3, false),
-        TaskEventMessage.u64Data(4, 0),
-        TaskEventMessage.u64Data(5, 0xFFFFFFFFFFFFFFFF),
-        TaskEventMessage.u64Data(6, 0x123456789ABCDEF0),
+        QuicTaskMessage.noData(1),
+        QuicTaskMessage.boolData(2, true),
+        QuicTaskMessage.boolData(3, false),
+        QuicTaskMessage.u64Data(4, 0),
+        QuicTaskMessage.u64Data(5, 0xFFFFFFFFFFFFFFFF),
+        QuicTaskMessage.u64Data(6, 0x123456789ABCDEF0),
       ];
 
       for (final original in messages) {
@@ -337,7 +332,7 @@ void main() {
       expect(wrongSizeResult, isNull);
 
       // Test with corrupted magic number
-      final validMessage = TaskEventMessage.noData(123);
+      final validMessage = QuicTaskMessage.noData(123);
       final serialized = MessageSerializer.serialize(validMessage);
 
       // Corrupt the magic number
@@ -446,7 +441,7 @@ void main() {
     });
 
     test('Complete message serialization roundtrip with endianness', () {
-      final original = TaskEventMessage.u64Data(
+      final original = QuicTaskMessage.u64Data(
         0x123456789ABC,
         0xFEEDFACECAFEBABE,
       ); // Use 6-byte taskId
@@ -559,9 +554,9 @@ void main() {
     test('Protocol message size and alignment verification', () {
       // Verify that all protocol components have expected sizes
       final testMessages = [
-        TaskEventMessage.noData(1),
-        TaskEventMessage.boolData(2, true),
-        TaskEventMessage.u64Data(3, 0x123456789ABCDEF0),
+        QuicTaskMessage.noData(1),
+        QuicTaskMessage.boolData(2, true),
+        QuicTaskMessage.u64Data(3, 0x123456789ABCDEF0),
       ];
 
       for (final message in testMessages) {

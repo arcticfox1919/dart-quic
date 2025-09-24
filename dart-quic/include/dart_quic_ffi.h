@@ -24,29 +24,25 @@
  */
 #define PROTOCOL_MAGIC 3669818881
 
-/**
- * Generic Dart FFI task executor
- */
-typedef struct DartTaskExecutor_QuicCommandHandler DartTaskExecutor_QuicCommandHandler;
+typedef struct AsyncDartTaskExecutor_QuicCommandHandler AsyncDartTaskExecutor_QuicCommandHandler;
 
 typedef struct MemoryStats MemoryStats;
 
-typedef struct DartTaskExecutor_QuicCommandHandler QuicTaskExecutor;
+typedef struct AsyncDartTaskExecutor_QuicCommandHandler QuicTaskExecutor;
 
-/**
- * Dart Native Port type
- */
 typedef int64_t DartPort;
 
-/**
- * Task ID type
- */
 typedef uint64_t TaskId;
 
 /**
  * Create QUIC task executor
  */
 QuicTaskExecutor *dart_quic_executor_new(DartPort dart_port);
+
+/**
+ * Initialize QUIC executor runtime (async, returns TaskId for event tracking)
+ */
+TaskId dart_quic_executor_init_runtime(QuicTaskExecutor *executor, uintptr_t threads);
 
 /**
  * Submit QUIC task
@@ -65,20 +61,11 @@ bool dart_quic_executor_is_running(QuicTaskExecutor *executor);
 
 /**
  * Release QUIC executor - returns immediately, closes asynchronously
- *
- * Recommended for main thread calls
  */
 void dart_quic_executor_free(QuicTaskExecutor *executor);
 
 /**
  * Release QUIC executor - synchronous version (will block)
- *
- * This function will:
- * 1. Gracefully shutdown worker thread (5 second timeout)
- * 2. Release all related memory
- * 3. Wait for tasks in progress to complete
- *
- * Warning: This function may block for up to 5 seconds, use with caution on main thread
  */
 void dart_quic_executor_free_sync(QuicTaskExecutor *executor);
 

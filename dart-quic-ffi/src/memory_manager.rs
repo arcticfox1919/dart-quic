@@ -287,21 +287,6 @@ impl TypeSafeMemoryPool {
         }
     }
     
-    /// Type-safe deallocation
-    fn deallocate(&self, ptr: *mut u8) -> bool {
-        if ptr.is_null() {
-            return false;
-        }
-        
-        self.pool_deallocations.fetch_add(1, Ordering::Relaxed);
-        
-        let typed_ptr = TypedPointer::new(ptr, self.block_size);
-        
-        // Store in lock-free queue
-        self.free_blocks.push(typed_ptr);
-        true
-    }
-    
     /// Smart deallocation attempt - let the pool decide whether to accept this pointer
     /// Decide whether to accept based on size match and pool capacity
     fn try_deallocate(&self, ptr: *mut u8) -> bool {
@@ -678,15 +663,12 @@ static GLOBAL_MEMORY_MANAGER: std::sync::OnceLock<Arc<DartMemoryManager>> = std:
 
 /// Initialize global memory manager
 pub fn initialize_memory_manager() -> bool {
-    // Check if already initialized to avoid duplicate initialization
-    if is_memory_manager_available() {
-        return true;
-    }
     initialize_memory_manager_with_config(PoolConfig::new())
 }
 
 /// Initialize global memory manager with custom configuration
 pub fn initialize_memory_manager_with_config(config: PoolConfig) -> bool {
+    // Check if already initialized to avoid duplicate initialization
     if is_memory_manager_available() {
         return true; 
     }

@@ -33,6 +33,7 @@ enum TaskStatus {
   corruptedData(0xF003); // Data corrupted
 
   const TaskStatus(this.value);
+
   final int value;
 
   /// Create TaskStatus from integer value using factory constructor
@@ -75,6 +76,7 @@ enum DataType {
   string(4); // String (error messages, etc.)
 
   const DataType(this.value);
+
   final int value;
 
   /// Create DataType from integer value using factory constructor
@@ -185,17 +187,11 @@ abstract class DataPayload {
 
   /// Serialize payload to bytes (16 bytes)
   Uint8List toBytes();
-
-  /// Get the data type
-  DataType get dataType;
 }
 
 /// No data payload
 class NoDataPayload extends DataPayload {
   const NoDataPayload();
-
-  @override
-  DataType get dataType => DataType.none;
 
   @override
   Uint8List toBytes() {
@@ -208,9 +204,6 @@ class BoolDataPayload extends DataPayload {
   final bool value;
 
   const BoolDataPayload(this.value);
-
-  @override
-  DataType get dataType => DataType.bool;
 
   @override
   Uint8List toBytes() {
@@ -227,9 +220,6 @@ class U64DataPayload extends DataPayload {
   const U64DataPayload(this.value);
 
   @override
-  DataType get dataType => DataType.u64;
-
-  @override
   Uint8List toBytes() {
     final buffer = ByteData(16);
     buffer.setUint64(0, value, Endian.little);
@@ -243,9 +233,6 @@ class BytesDataPayload extends DataPayload {
   final int length;
 
   const BytesDataPayload(this.ptr, this.length);
-
-  @override
-  DataType get dataType => DataType.bytes;
 
   @override
   Uint8List toBytes() {
@@ -272,9 +259,6 @@ class StringDataPayload extends DataPayload {
   const StringDataPayload(this.ptr, this.length);
 
   @override
-  DataType get dataType => DataType.string;
-
-  @override
   Uint8List toBytes() {
     final buffer = ByteData(16);
     buffer.setUint64(0, ptr.address, Endian.little); // Pointer as address
@@ -294,15 +278,15 @@ class StringDataPayload extends DataPayload {
 
 /// Complete task event message structure
 /// Corresponds to the Rust TaskEventMessage struct (32 bytes total)
-class TaskEventMessage {
+class QuicTaskMessage {
   final MessageHeader header;
   final DataPayload payload;
 
-  const TaskEventMessage({required this.header, required this.payload});
+  const QuicTaskMessage({required this.header, required this.payload});
 
   /// Create no-data success message
-  factory TaskEventMessage.noData(int taskId) {
-    return TaskEventMessage(
+  factory QuicTaskMessage.noData(int taskId) {
+    return QuicTaskMessage(
       header: MessageHeader(
         magic: protocolMagic,
         version: protocolVersion,
@@ -315,8 +299,8 @@ class TaskEventMessage {
   }
 
   /// Create boolean data message
-  factory TaskEventMessage.boolData(int taskId, bool value) {
-    return TaskEventMessage(
+  factory QuicTaskMessage.boolData(int taskId, bool value) {
+    return QuicTaskMessage(
       header: MessageHeader(
         magic: protocolMagic,
         version: protocolVersion,
@@ -329,8 +313,8 @@ class TaskEventMessage {
   }
 
   /// Create U64 data message
-  factory TaskEventMessage.u64Data(int taskId, int value) {
-    return TaskEventMessage(
+  factory QuicTaskMessage.u64Data(int taskId, int value) {
+    return QuicTaskMessage(
       header: MessageHeader(
         magic: protocolMagic,
         version: protocolVersion,
@@ -343,12 +327,12 @@ class TaskEventMessage {
   }
 
   /// Create bytes data message
-  factory TaskEventMessage.bytesData(
+  factory QuicTaskMessage.bytesData(
     int taskId,
     Pointer<Uint8> ptr,
     int length,
   ) {
-    return TaskEventMessage(
+    return QuicTaskMessage(
       header: MessageHeader(
         magic: protocolMagic,
         version: protocolVersion,
@@ -361,7 +345,7 @@ class TaskEventMessage {
   }
 
   /// Create string data message
-  factory TaskEventMessage.stringData(
+  factory QuicTaskMessage.stringData(
     int taskId,
     TaskStatus status,
     String text,
@@ -370,7 +354,7 @@ class TaskEventMessage {
     // In practice, you might want to allocate memory and create a pointer
     final bytes = utf8.encode(text);
     // This is a simplified version - in real implementation you'd need proper pointer management
-    return TaskEventMessage(
+    return QuicTaskMessage(
       header: MessageHeader(
         magic: protocolMagic,
         version: protocolVersion,
@@ -383,17 +367,17 @@ class TaskEventMessage {
   }
 
   /// Create error message
-  factory TaskEventMessage.errorMessage(
+  factory QuicTaskMessage.errorMessage(
     int taskId,
     TaskStatus errorType,
     String errorMsg,
   ) {
-    return TaskEventMessage.stringData(taskId, errorType, errorMsg);
+    return QuicTaskMessage.stringData(taskId, errorType, errorMsg);
   }
 
   /// Create worker shutdown message
-  factory TaskEventMessage.shutdownMessage() {
-    return TaskEventMessage(
+  factory QuicTaskMessage.shutdownMessage() {
+    return QuicTaskMessage(
       header: MessageHeader(
         magic: protocolMagic,
         version: protocolVersion,
@@ -430,7 +414,7 @@ class TaskEventMessage {
   }
 
   /// Deserialize message from bytes
-  static TaskEventMessage? fromBytes(Uint8List bytes) {
+  static QuicTaskMessage? fromBytes(Uint8List bytes) {
     if (bytes.length < 32) return null;
 
     // Parse header
@@ -473,12 +457,12 @@ class TaskEventMessage {
         break;
     }
 
-    return TaskEventMessage(header: header, payload: payload);
+    return QuicTaskMessage(header: header, payload: payload);
   }
 
   @override
   String toString() {
-    return 'TaskEventMessage(header: $header, payload: ${payload.runtimeType})';
+    return 'QuicTaskMessage(header: $header, payload: ${payload.runtimeType})';
   }
 }
 
@@ -488,18 +472,18 @@ class MessageSerializer {
   const MessageSerializer._();
 
   /// Serialize message to binary data (fixed 32 bytes)
-  static Uint8List serialize(TaskEventMessage message) {
+  static Uint8List serialize(QuicTaskMessage message) {
     return message.toBytes();
   }
 
   /// Deserialize binary data to message
-  static TaskEventMessage? deserialize(Uint8List data) {
-    return TaskEventMessage.fromBytes(data);
+  static QuicTaskMessage? deserialize(Uint8List data) {
+    return QuicTaskMessage.fromBytes(data);
   }
 
   /// Get data pointed to by pointer (zero-copy access)
   /// Returns null if no pointer data is available
-  static Uint8List? getDataPointer(TaskEventMessage message) {
+  static Uint8List? getDataPointer(QuicTaskMessage message) {
     switch (message.payload) {
       case BytesDataPayload(:final ptr, :final length):
         if (ptr != nullptr && length > 0) {
@@ -518,7 +502,7 @@ class MessageSerializer {
   }
 
   /// Get string data from pointer
-  static String? getStringData(TaskEventMessage message) {
+  static String? getStringData(QuicTaskMessage message) {
     if (message.payload is StringDataPayload) {
       final stringPayload = message.payload as StringDataPayload;
       return stringPayload.getString();
@@ -549,8 +533,8 @@ class ProtocolUtils {
   }
 
   /// Create protocol error message
-  static TaskEventMessage createProtocolError(int taskId, String error) {
-    return TaskEventMessage.errorMessage(
+  static QuicTaskMessage createProtocolError(int taskId, String error) {
+    return QuicTaskMessage.errorMessage(
       taskId,
       TaskStatus.protocolError,
       error,
@@ -558,11 +542,11 @@ class ProtocolUtils {
   }
 
   /// Create version mismatch error
-  static TaskEventMessage createVersionMismatchError(
+  static QuicTaskMessage createVersionMismatchError(
     int taskId,
     int receivedVersion,
   ) {
-    return TaskEventMessage.errorMessage(
+    return QuicTaskMessage.errorMessage(
       taskId,
       TaskStatus.versionMismatch,
       'Version mismatch: expected $protocolVersion, got $receivedVersion',
@@ -570,8 +554,8 @@ class ProtocolUtils {
   }
 
   /// Create corrupted data error
-  static TaskEventMessage createCorruptedDataError(int taskId) {
-    return TaskEventMessage.errorMessage(
+  static QuicTaskMessage createCorruptedDataError(int taskId) {
+    return QuicTaskMessage.errorMessage(
       taskId,
       TaskStatus.corruptedData,
       'Data corrupted',

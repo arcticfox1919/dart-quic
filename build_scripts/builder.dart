@@ -179,16 +179,6 @@ class NativeLibraryBuilder {
     _log('🔧 Build mode: ${config.buildMode}');
 
     try {
-      // Check if we can skip this build
-      if (config.skipExisting && await _isLibraryUpToDate()) {
-        _log('⏭️  Skipping - library is up to date');
-        return BuildResult(
-          platform: config.platform,
-          success: true,
-          duration: DateTime.now().difference(startTime),
-        );
-      }
-
       await _ensureRustTarget();
       await _configureCargo();
       await _buildWithCargo();
@@ -211,33 +201,6 @@ class NativeLibraryBuilder {
         error: e.toString(),
       );
     }
-  }
-
-  /// Check if the library is already up to date
-  Future<bool> _isLibraryUpToDate() async {
-    final outputPath = await _getDartQuicOutputPath();
-    final outputFile = File(outputPath);
-
-    if (!await outputFile.exists()) return false;
-
-    // Check if Cargo.toml or source files are newer than the output
-    final cargoToml = File('$ffiProjectDir/Cargo.toml');
-    final srcDir = Directory('$ffiProjectDir/src');
-
-    final outputModified = await outputFile.lastModified();
-    final cargoModified = await cargoToml.lastModified();
-
-    if (cargoModified.isAfter(outputModified)) return false;
-
-    // Check source files
-    await for (final entity in srcDir.list(recursive: true)) {
-      if (entity is File && entity.path.endsWith('.rs')) {
-        final srcModified = await entity.lastModified();
-        if (srcModified.isAfter(outputModified)) return false;
-      }
-    }
-
-    return true;
   }
 
   Future<void> _ensureRustTarget() async {
@@ -330,33 +293,23 @@ class NativeLibraryBuilder {
       throw Exception('Built library not found: ${sourceLib.path}');
     }
 
-    // Copy to dart-quic/lib/src/native (existing behavior)
-    final dartQuicOutputPath = await _getDartQuicOutputPath();
-    final dartQuicDestLib = File(dartQuicOutputPath);
-    await dartQuicDestLib.parent.create(recursive: true);
-    await sourceLib.copy(dartQuicDestLib.path);
-
-    // Copy to standard binary distribution directory
     final distOutputPath = await _getDistOutputPath();
     final distDestLib = File(distOutputPath);
     await distDestLib.parent.create(recursive: true);
+
+    if (await distDestLib.exists()) {
+      await distDestLib.delete();
+    }
     await sourceLib.copy(distDestLib.path);
 
     // Copy header file to dart-quic/include
     await _copyHeaderFile();
 
     final libSize = await sourceLib.length();
-    _log('📁 Library copied to: ${dartQuicDestLib.path}');
-    _log('📦 Distribution copy: ${distDestLib.path}');
+    _log(' Distribution copy: ${distDestLib.path}');
     _log('📊 Library size: ${_formatFileSize(libSize)}');
 
     return libSize;
-  }
-
-  Future<String> _getDartQuicOutputPath() async {
-    final outputDir =
-        config.outputDir ?? '$ffiProjectDir/../dart-quic/lib/src/native';
-    return '$outputDir/${config.platform.os}/${config.platform.libFileName}';
   }
 
   Future<String> _getDistOutputPath() async {
@@ -387,9 +340,7 @@ class NativeLibraryBuilder {
   }
 
   void _log(String message) {
-    if (config.verbose) {
-      print(message);
-    }
+    print(message);
   }
 }
 

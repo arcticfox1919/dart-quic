@@ -1,6 +1,6 @@
 name: 'QuicFFIBindings'
 description: 'Bindings for dart-quic-ffi library'
-output: 'lib/src/quic_ffi_bindings.dart'
+output: 'lib/src/bindings/quic_ffi_bindings.dart'
 
 llvm-path:
   - 'D:\develop2\LLVM'

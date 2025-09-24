@@ -1,10 +1,11 @@
 
-pub mod dart_ffi_executor;
+pub mod runtime_manager;
+pub mod async_dart_task_executor;
 pub mod memory_manager;
 pub mod binary_protocol;
 pub mod quic_command_handler;
 
-pub use dart_ffi_executor::*;
+pub use async_dart_task_executor::*;
 pub use quic_command_handler::{QuicCommandHandler, QuicCommandType};
 pub use memory_manager::{
     allocate, deallocate, memory_stats, MemoryStats,
@@ -13,15 +14,27 @@ pub use memory_manager::{
 };
 
 // Create QUIC-specific type for FFI
-pub type QuicTaskExecutor = DartTaskExecutor<QuicCommandHandler>;
+pub type QuicTaskExecutor = AsyncDartTaskExecutor<QuicCommandHandler>;
 
 // FFI export functions - unified management
 /// Create QUIC task executor
 #[unsafe(no_mangle)]
 pub extern "C" fn dart_quic_executor_new(dart_port: DartPort) -> *mut QuicTaskExecutor {
     let handler = QuicCommandHandler::new();
-    let executor = DartTaskExecutor::new(dart_port, handler);
+    let executor = AsyncDartTaskExecutor::new(dart_port, handler);
     Box::into_raw(Box::new(executor))
+}
+
+/// Initialize QUIC executor runtime (async, returns TaskId for event tracking)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dart_quic_executor_init_runtime(executor: *mut QuicTaskExecutor, threads: usize) -> TaskId {
+    if executor.is_null() {
+        return 0;
+    }
+    unsafe {
+        let executor_ref = &*executor;
+        executor_ref.init_runtime(threads)
+    }
 }
 
 /// Submit QUIC task
@@ -37,7 +50,6 @@ pub unsafe extern "C" fn dart_quic_executor_submit_params(
     if executor.is_null() {
         return 0;
     }
-    
     unsafe {
         let executor_ref = &*executor;
         executor_ref.submit_task(command_type, data_ptr, data_len, params_ptr, params_count)
@@ -50,7 +62,6 @@ pub unsafe extern "C" fn dart_quic_executor_is_running(executor: *mut QuicTaskEx
     if executor.is_null() {
         return false;
     }
-    
     unsafe {
         let executor_ref = &*executor;
         executor_ref.is_running()
@@ -58,17 +69,12 @@ pub unsafe extern "C" fn dart_quic_executor_is_running(executor: *mut QuicTaskEx
 }
 
 /// Release QUIC executor - returns immediately, closes asynchronously
-/// 
-/// Recommended for main thread calls
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_executor_free(executor: *mut QuicTaskExecutor) {
     if !executor.is_null() {
         unsafe {
             let executor_box = Box::from_raw(executor);
-            
-            // Execute blocking release operation in background thread
             std::thread::spawn(move || {
-                // executor_box is released here, automatically calls Drop::drop()
                 drop(executor_box);
             });
         }
@@ -76,20 +82,11 @@ pub unsafe extern "C" fn dart_quic_executor_free(executor: *mut QuicTaskExecutor
 }
 
 /// Release QUIC executor - synchronous version (will block)
-/// 
-/// This function will:
-/// 1. Gracefully shutdown worker thread (5 second timeout)
-/// 2. Release all related memory
-/// 3. Wait for tasks in progress to complete
-/// 
-/// Warning: This function may block for up to 5 seconds, use with caution on main thread
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_executor_free_sync(executor: *mut QuicTaskExecutor) {
     if !executor.is_null() {
         unsafe {
-            // Box::from_raw regains Box ownership, then automatically releases
             let _executor_box = Box::from_raw(executor);
-            // Automatically calls Drop trait when scope ends, internally gracefully shuts down worker thread
         }
     }
 }
