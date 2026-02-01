@@ -126,6 +126,26 @@ impl QuicFfiResult {
             }
         }
     }
+
+    /// Write error string to existing result (for parameter validation)
+    /// 
+    /// This method modifies the existing result in-place without allocating new QuicFfiResult,
+    /// preventing memory leaks when the result pointer is passed from upper layer.
+    pub fn write_error_str(&mut self, msg: &str) {
+        self.handle = std::ptr::null_mut();
+        let msg_bytes = msg.as_bytes();
+        let ptr = allocate(msg_bytes.len());
+        if !ptr.is_null() {
+            unsafe {
+                std::ptr::copy_nonoverlapping(msg_bytes.as_ptr(), ptr, msg_bytes.len());
+            }
+            self.error_msg = ptr;
+            self.error_msg_len = msg_bytes.len();
+        } else {
+            self.error_msg = std::ptr::null_mut();
+            self.error_msg_len = 0;
+        }
+    }
 }
 
 /// Free error message allocated by QuicFfiResult

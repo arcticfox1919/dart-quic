@@ -225,7 +225,7 @@ impl QuicClient {
 // ============================================================================
 
 /// Trust mode
-#[repr(C)]
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuicFfiTrustMode {
     /// Skip verification (testing only! dangerous!)
@@ -241,7 +241,7 @@ pub enum QuicFfiTrustMode {
 }
 
 /// Client certificate mode (mTLS)
-#[repr(C)]
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuicFfiClientCertMode {
     /// No client certificate
@@ -342,6 +342,102 @@ pub struct QuicFfiClientConfig {
 }
 
 impl QuicFfiClientConfig {
+    /// Build Quinn ClientConfig from FFI configuration (without creating endpoint)
+    ///
+    /// This method builds only the `quinn::ClientConfig` which can be used
+    /// to create a unified endpoint or for other advanced use cases.
+    pub fn build_quinn_config(&self) -> Result<quinn::ClientConfig, QuicError> {
+        use std::ffi::CStr;
+        
+        // Build base builder
+        let mut builder = QuicClientConfigBuilder::new();
+        
+        // Configure trust mode
+        builder = match self.trust_mode {
+            QuicFfiTrustMode::SkipVerification => {
+                builder.with_skip_verification()
+            }
+            QuicFfiTrustMode::SystemRoots => {
+                builder.with_system_roots()
+            }
+            QuicFfiTrustMode::CustomCaDer => {
+                if self.ca_cert_data.is_null() || self.ca_cert_len == 0 {
+                    return Err(QuicError::unknown("CA certificate data is required for CustomCaDer mode".to_string()));
+                }
+                let ca_der = unsafe { std::slice::from_raw_parts(self.ca_cert_data, self.ca_cert_len as usize) }.to_vec();
+                builder.with_custom_ca(ca_der)
+            }
+            QuicFfiTrustMode::CustomCaPemFile => {
+                if self.ca_cert_path.is_null() {
+                    return Err(QuicError::unknown("CA certificate path is required for CustomCaPemFile mode".to_string()));
+                }
+                let path = unsafe { CStr::from_ptr(self.ca_cert_path) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid CA certificate path encoding".to_string()))?;
+                builder.with_custom_ca_pem_file(path)?
+            }
+            QuicFfiTrustMode::CustomCaDerFile => {
+                if self.ca_cert_path.is_null() {
+                    return Err(QuicError::unknown("CA certificate path is required for CustomCaDerFile mode".to_string()));
+                }
+                let path = unsafe { CStr::from_ptr(self.ca_cert_path) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid CA certificate path encoding".to_string()))?;
+                builder.with_custom_ca_der_file(path)?
+            }
+        };
+        
+        // Configure client certificate (mTLS)
+        builder = match self.client_cert_mode {
+            QuicFfiClientCertMode::None => builder,
+            QuicFfiClientCertMode::Der => {
+                if self.client_cert_data.is_null() || self.client_cert_len == 0 {
+                    return Err(QuicError::unknown("Client certificate data is required for Der mode".to_string()));
+                }
+                if self.client_key_data.is_null() || self.client_key_len == 0 {
+                    return Err(QuicError::unknown("Client key data is required for Der mode".to_string()));
+                }
+                let cert_der = unsafe { std::slice::from_raw_parts(self.client_cert_data, self.client_cert_len as usize) }.to_vec();
+                let key_der = unsafe { std::slice::from_raw_parts(self.client_key_data, self.client_key_len as usize) }.to_vec();
+                builder.with_client_cert(cert_der, key_der)
+            }
+            QuicFfiClientCertMode::PemFile => {
+                if self.client_cert_path.is_null() || self.client_key_path.is_null() {
+                    return Err(QuicError::unknown("Client certificate and key paths are required for PemFile mode".to_string()));
+                }
+                let cert_path = unsafe { CStr::from_ptr(self.client_cert_path) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid client certificate path encoding".to_string()))?;
+                let key_path = unsafe { CStr::from_ptr(self.client_key_path) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid client key path encoding".to_string()))?;
+                builder.with_client_cert_pem_files(cert_path, key_path)?
+            }
+            QuicFfiClientCertMode::DerFile => {
+                if self.client_cert_path.is_null() || self.client_key_path.is_null() {
+                    return Err(QuicError::unknown("Client certificate and key paths are required for DerFile mode".to_string()));
+                }
+                let cert_path = unsafe { CStr::from_ptr(self.client_cert_path) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid client certificate path encoding".to_string()))?;
+                let key_path = unsafe { CStr::from_ptr(self.client_key_path) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid client key path encoding".to_string()))?;
+                builder.with_client_cert_der_files(cert_path, key_path)?
+            }
+        };
+        
+        // Configure transport parameters
+        if !self.transport_config.is_null() {
+            let ffi_config = unsafe { &*self.transport_config };
+            let config = QuicTransportConfig::from(ffi_config);
+            builder = builder.with_transport_config(config);
+        }
+        
+        // Build Quinn config (without binding to address)
+        builder.build_config()
+    }
+    
     /// Build QuicClient from FFI configuration
     pub fn build(&self) -> Result<QuicClient, QuicError> {
         use std::ffi::CStr;

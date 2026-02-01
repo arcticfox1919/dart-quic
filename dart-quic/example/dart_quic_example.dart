@@ -7,7 +7,6 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
-import 'package:dart_quic/src/core/quic_message_processor.dart';
 import 'package:dart_quic/src/core/quic_buffer.dart';
 import 'package:dart_quic/src/core/quic_initializer.dart';
 import 'package:dart_quic/src/utils/library_loader.dart';

@@ -1,50 +1,34 @@
 import 'dart:async';
+import 'dart:ffi';
 
-import 'package:dart_quic/src/common/quic_endpoint.dart';
+import 'package:dart_quic/src/bindings/quic_ffi_bindings.dart';
+import 'package:dart_quic/src/client/quic_client_config.dart';
+import 'package:dart_quic/src/common/quic_result.dart';
+import 'package:dart_quic/src/core/quic_initializer.dart';
+import 'package:ffi/ffi.dart' as ffi;
 
-import '../common/socket_address.dart';
-import '../core/quic_message_processor.dart';
-
-final class ClientConfig {
-  final SocketAddress clientAddr;
-  final SocketAddress serverAddr;
-  final String serverName;
-  final bool skipServerVerification;
-
-  ClientConfig({
-    required this.clientAddr,
-    required this.serverAddr,
-    required this.serverName,
-    this.skipServerVerification = false,
-  });
-}
 
 class QuicClient {
-  final QuicMessageProcessor _processor;
-  final _response = <int, Completer>{};
+  final QuicFFIBindings _bindings;
+  final _arena = ffi.Arena();
+  Pointer<Void>? clientPtr;
 
-  QuicClient._() : _processor = QuicMessageProcessor() {
-    _processor.setTaskHandler(_handleResponse);
-  }
-
-  Future<void> _setup() => _processor.initialize();
-
-  QuicEndpoint newEndpoint({required ClientConfig config}) {
-    return QuicEndpoint();
-  }
-
-  void _handleResponse(QuicTaskResponse resp) {
-    final task = _response.remove(resp.taskId);
-    if (task != null) {
-      task.complete(resp.buffer);
+  QuicClient(QuicClientConfig config)
+    : _bindings = QuicInitializer.ffiBindings {
+    final resultPtr = ffi.calloc<QuicFfiResult>();
+    try {
+      final resultCode = _bindings.dart_quic_client_new(
+        config.ffiConfig,
+        resultPtr,
+      );
+      if (QuicResultCode.isSuccess(resultCode)) {
+        clientPtr = resultPtr.ref.handle;
+      } else {
+        print(QuicResultCode.getMessage(resultCode));
+      }
+    } finally {
+      config.dispose();
+      ffi.calloc.free(resultPtr);
     }
-  }
-
-  Future<void> close() => _processor.dispose();
-
-  static Future<QuicClient> create() async {
-    final client = QuicClient._();
-    await client._setup();
-    return client;
   }
 }

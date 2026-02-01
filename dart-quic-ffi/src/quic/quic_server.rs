@@ -273,3 +273,85 @@ impl Default for QuicFfiServerConfig {
     }
 }
 
+impl QuicFfiServerConfig {
+    /// Build Quinn ServerConfig from FFI configuration (without creating endpoint)
+    ///
+    /// This method builds only the `quinn::ServerConfig` which can be used
+    /// to create a unified endpoint or for other advanced use cases.
+    pub fn build_quinn_config(&self) -> Result<quinn::ServerConfig, QuicError> {
+        use std::ffi::CStr;
+        use super::quic_config::QuicServerConfigBuilder;
+        
+        let mut builder = QuicServerConfigBuilder::new();
+        
+        // Configure certificate based on mode
+        builder = match self.cert_mode {
+            0 => {
+                // File mode
+                if self.cert_path_ptr.is_null() || self.key_path_ptr.is_null() {
+                    return Err(QuicError::unknown("Certificate and key paths are required for file mode".to_string()));
+                }
+                let cert_path = unsafe { CStr::from_ptr(self.cert_path_ptr) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid certificate path encoding".to_string()))?;
+                let key_path = unsafe { CStr::from_ptr(self.key_path_ptr) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid key path encoding".to_string()))?;
+                builder.with_cert_pem_files(cert_path, key_path)?
+            }
+            1 => {
+                // Memory mode
+                if self.cert_der_ptr.is_null() || self.cert_der_len == 0 ||
+                   self.key_der_ptr.is_null() || self.key_der_len == 0 {
+                    return Err(QuicError::unknown("Certificate and key data are required for memory mode".to_string()));
+                }
+                let cert_der = unsafe { std::slice::from_raw_parts(self.cert_der_ptr, self.cert_der_len as usize) }.to_vec();
+                let key_der = unsafe { std::slice::from_raw_parts(self.key_der_ptr, self.key_der_len as usize) }.to_vec();
+                builder.with_cert_der(cert_der, key_der)
+            }
+            2 => {
+                // Self-signed mode
+                let san_list: Vec<String> = if !self.san_ptr.is_null() && self.san_count > 0 {
+                    let san_ptrs = unsafe { std::slice::from_raw_parts(self.san_ptr, self.san_count as usize) };
+                    san_ptrs.iter()
+                        .filter_map(|&ptr| {
+                            if !ptr.is_null() {
+                                unsafe { CStr::from_ptr(ptr) }.to_str().ok().map(|s| s.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                };
+                let san_refs: Vec<&str> = san_list.iter().map(|s| s.as_str()).collect();
+                builder.with_self_signed(&san_refs)
+            }
+            _ => return Err(QuicError::unknown(format!("Invalid cert mode: {}", self.cert_mode))),
+        };
+        
+        // Configure client authentication (mTLS)
+        if self.client_auth_mode > 0 {
+            if self.client_ca_ptr.is_null() || self.client_ca_len == 0 {
+                return Err(QuicError::unknown("Client CA certificate data is required when client auth is enabled".to_string()));
+            }
+            let client_ca_der = unsafe { std::slice::from_raw_parts(self.client_ca_ptr, self.client_ca_len as usize) }.to_vec();
+            builder = if self.client_auth_mode == 1 {
+                // Required
+                builder.require_client_cert(client_ca_der)
+            } else {
+                // Optional
+                builder.optional_client_cert(client_ca_der)
+            };
+        }
+        
+        // Configure transport parameters
+        let transport_config = super::quic_config::QuicTransportConfig::from(&self.transport);
+        builder = builder.with_transport_config(transport_config);
+        
+        // Build Quinn config
+        builder.build_config()
+    }
+}
+

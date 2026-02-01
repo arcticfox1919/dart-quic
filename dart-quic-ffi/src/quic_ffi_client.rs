@@ -40,7 +40,7 @@ pub unsafe extern "C" fn dart_quic_client_new(
 
     if config.is_null() {
         unsafe {
-            *result = QuicFfiResult::error_str(ERR_CONFIG_REQUIRED);
+            (*result).write_error_str(ERR_CONFIG_REQUIRED);
         }
         return types::QuicResult::InvalidParameter as i32;
     }

@@ -14,6 +14,7 @@ use crate::{
     quic,
     quic::QuicConnectionHandle,
     error::QuicError,
+    types,
     allocate,
 };
 
@@ -47,23 +48,44 @@ use crate::{
 /// # Safety
 /// - config and result must be valid pointers
 /// - client_config/server_config must be valid or null based on mode
+/// Create a QUIC endpoint
+///
+/// # Parameters
+/// - `config`: Endpoint configuration (mode and bind address)
+/// - `client`: QuicClient pointer (nullable, required for Client/Bidirectional modes, will be consumed)
+/// - `server`: QuicServer pointer (nullable, required for Server/Bidirectional modes, will be consumed)
+/// - `result`: Result output structure
+///
+/// # Returns
+/// - 0 on success (result.data contains endpoint pointer)
+/// - Error code on failure (result.error contains error details)
+///
+/// # Mode Requirements
+/// - ClientOnly: client required, server must be null
+/// - ServerOnly: server required, client must be null
+/// - Bidirectional: both client and server must be provided
+///
+/// # Safety
+/// - config and result must be valid pointers
+/// - client/server must be valid or null based on mode
+/// - client/server will be consumed and must not be used after this call
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_endpoint_create(
     config: *const quic::QuicFfiEndpointConfig,
-    client_config: *mut quinn::ClientConfig,
-    server_config: *mut quinn::ServerConfig,
+    client_config: *const quic::QuicFfiClientConfig,
+    server_config: *const quic::QuicFfiServerConfig,
     result: *mut QuicFfiResult,
 ) -> i32 {
     if result.is_null() {
-        return -1;
+        return types::QuicResult::InvalidParameter as i32;
     }
 
     // Validate config
     if config.is_null() {
         unsafe {
-            *result = QuicFfiResult::error_str("Endpoint config is null");
+            (*result).write_error_str("Endpoint config is null");
         }
-        return -1;
+        return types::QuicResult::InvalidParameter as i32;
     }
 
     let config_ref = unsafe { &*config };
@@ -101,9 +123,9 @@ pub unsafe extern "C" fn dart_quic_endpoint_create(
 
     if let Some(error) = validation_error {
         unsafe {
-            *result = QuicFfiResult::error_str(error);
+            (*result).write_error_str(error);
         }
-        return -1;
+        return types::QuicResult::InvalidParameter as i32;
     }
 
     // Parse bind address
@@ -115,24 +137,29 @@ pub unsafe extern "C" fn dart_quic_endpoint_create(
     let bind_addr = SocketAddr::from((bind_ip, config_ref.bind_port));
 
     // Build endpoint
-    let mut builder = quic::QuicEndpoint::builder();
+    let endpoint_result = (|| -> Result<*mut quic::QuicEndpoint, QuicError> {
+        let mut builder = quic::QuicEndpoint::builder();
 
-    // Add client config if present
-    if !client_config.is_null() {
-        let client_cfg = unsafe { Box::from_raw(client_config) };
-        builder = builder.with_client_config(*client_cfg);
-    }
+        // Build and add client config if present
+        if !client_config.is_null() {
+            let client_ffi_cfg = unsafe { &*client_config };
+            let quinn_client_config = client_ffi_cfg.build_quinn_config()?;
+            builder = builder.with_client_config(quinn_client_config);
+        }
 
-    // Add server config if present
-    if !server_config.is_null() {
-        let server_cfg = unsafe { Box::from_raw(server_config) };
-        builder = builder.with_server_config(*server_cfg);
-    }
+        // Build and add server config if present  
+        if !server_config.is_null() {
+            let server_ffi_cfg = unsafe { &*server_config };
+            let quinn_server_config = server_ffi_cfg.build_quinn_config()?;
+            builder = builder.with_server_config(quinn_server_config);
+        }
 
-    // Create endpoint
-    let endpoint_result = builder.bind_addr(bind_addr)
-        .map(|ep| Box::into_raw(Box::new(ep)))
-        .map_err(|e| QuicError::unknown(format!("Failed to create endpoint: {}", e)));
+        // Create endpoint
+        let endpoint = builder.bind_addr(bind_addr)
+            .map_err(|e| QuicError::unknown(format!("Failed to bind endpoint: {}", e)))?;
+        
+        Ok(Box::into_raw(Box::new(endpoint)))
+    })();
 
     unsafe {
         (*result).write_result(endpoint_result)

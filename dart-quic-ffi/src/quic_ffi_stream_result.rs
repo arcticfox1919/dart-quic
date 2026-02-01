@@ -3,41 +3,158 @@
 //! C-compatible structures for returning stream handles from async operations.
 
 use crate::quic_executor::{QuicExecutor, SendableCallback, BytesCallback};
-use crate::{allocate, ERR_NOT_RUNNING};
-use crate::{check_executor_bytes, check_ptr_bytes};
+use crate::{allocate, ERR_NOT_RUNNING, check_executor_bytes};
+
+// ============================================================================
+// Stream Type Checking Macros
+// ============================================================================
+
+/// Check if handle is a valid recv stream (for BytesCallback)
+macro_rules! check_recv_stream_bytes {
+    ($handle:expr, $callback:expr) => {
+        if $handle.is_null() {
+            let err = b"Stream handle is null";
+            $callback(false, std::ptr::null_mut(), 0, err.as_ptr(), err.len());
+            return;
+        }
+        let stream_type = unsafe { (*$handle).stream_type };
+        if stream_type != QuicStreamType::Recv as u8 {
+            let err = b"Invalid stream type: expected Recv stream";
+            $callback(false, std::ptr::null_mut(), 0, err.as_ptr(), err.len());
+            return;
+        }
+    };
+}
+
+/// Check if handle is a valid send stream (for UsizeCallback)
+macro_rules! check_send_stream_usize {
+    ($handle:expr, $callback:expr) => {
+        if $handle.is_null() {
+            let err = b"Stream handle is null";
+            $callback(false, 0, err.as_ptr(), err.len());
+            return;
+        }
+        let stream_type = unsafe { (*$handle).stream_type };
+        if stream_type != QuicStreamType::Send as u8 {
+            let err = b"Invalid stream type: expected Send stream";
+            $callback(false, 0, err.as_ptr(), err.len());
+            return;
+        }
+    };
+}
+
+/// Check if handle is a valid send stream (for VoidCallback)
+macro_rules! check_send_stream_void {
+    ($handle:expr, $callback:expr) => {
+        if $handle.is_null() {
+            let err = b"Stream handle is null";
+            $callback(false, err.as_ptr(), err.len());
+            return;
+        }
+        let stream_type = unsafe { (*$handle).stream_type };
+        if stream_type != QuicStreamType::Send as u8 {
+            let err = b"Invalid stream type: expected Send stream";
+            $callback(false, err.as_ptr(), err.len());
+            return;
+        }
+    };
+}
+
+/// Check if handle is a valid send stream (for sync functions returning i32)
+macro_rules! check_send_stream_sync {
+    ($handle:expr) => {
+        if $handle.is_null() {
+            return crate::types::QuicResult::InvalidParameter as i32;
+        }
+        let stream_type = unsafe { (*$handle).stream_type };
+        if stream_type != QuicStreamType::Send as u8 {
+            return crate::types::QuicResult::InvalidParameter as i32;
+        }
+    };
+}
+
+// ============================================================================
+// Stream Handle Structure
+// ============================================================================
+
+/// Stream type enumeration
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuicStreamType {
+    /// Receive stream (accept_uni, or recv side of bi stream)
+    Recv = 0,
+    /// Send stream (open_uni, or send side of bi stream)
+    Send = 1,
+}
+
+/// Unified stream handle with metadata
+///
+/// FFI-friendly structure wrapping a stream pointer, its ID, and type.
+/// The stream pointer can be either `SendStream*` or `RecvStream*` depending on `stream_type`.
+#[repr(C)]
+pub struct QuicFfiStreamHandle {
+    /// Stream pointer (cast to void* for FFI, actual type depends on stream_type)
+    pub stream: *mut std::ffi::c_void,
+    /// Stream ID
+    pub stream_id: u64,
+    /// Stream type (0 = Recv, 1 = Send)
+    pub stream_type: u8,
+}
+
+impl QuicFfiStreamHandle {
+    /// Create a new send stream handle
+    pub fn new_send(stream: quinn::SendStream) -> Self {
+        let stream_id = stream.id().index();
+        Self {
+            stream: Box::into_raw(Box::new(stream)) as *mut std::ffi::c_void,
+            stream_id,
+            stream_type: QuicStreamType::Send as u8,
+        }
+    }
+
+    /// Create a new recv stream handle
+    pub fn new_recv(stream: quinn::RecvStream) -> Self {
+        let stream_id = stream.id().index();
+        Self {
+            stream: Box::into_raw(Box::new(stream)) as *mut std::ffi::c_void,
+            stream_id,
+            stream_type: QuicStreamType::Recv as u8,
+        }
+    }
+}
 
 /// C-compatible structure for stream pair
-/// Contains both send and recv stream pointers (one or both may be null)
+/// Contains both send and recv stream handles (one or both may be null)
 #[repr(C)]
 pub struct QuicFfiStreamPair {
-    /// Send stream pointer (null if not applicable)
-    pub send_stream: *mut quinn::SendStream,
-    /// Recv stream pointer (null if not applicable)
-    pub recv_stream: *mut quinn::RecvStream,
+    /// Send stream handle (null if not applicable)
+    pub send_handle: *mut QuicFfiStreamHandle,
+    /// Recv stream handle (null if not applicable)
+    pub recv_handle: *mut QuicFfiStreamHandle,
 }
 
 impl QuicFfiStreamPair {
     /// Create a bidirectional stream pair
     pub fn bi(send: quinn::SendStream, recv: quinn::RecvStream) -> Self {
         Self {
-            send_stream: Box::into_raw(Box::new(send)),
-            recv_stream: Box::into_raw(Box::new(recv)),
+            send_handle: Box::into_raw(Box::new(QuicFfiStreamHandle::new_send(send))),
+            recv_handle: Box::into_raw(Box::new(QuicFfiStreamHandle::new_recv(recv))),
         }
     }
     
     /// Create a send-only stream pair (for open_uni)
     pub fn send_only(send: quinn::SendStream) -> Self {
         Self {
-            send_stream: Box::into_raw(Box::new(send)),
-            recv_stream: std::ptr::null_mut(),
+            send_handle: Box::into_raw(Box::new(QuicFfiStreamHandle::new_send(send))),
+            recv_handle: std::ptr::null_mut(),
         }
     }
     
     /// Create a recv-only stream pair (for accept_uni)
     pub fn recv_only(recv: quinn::RecvStream) -> Self {
         Self {
-            send_stream: std::ptr::null_mut(),
-            recv_stream: Box::into_raw(Box::new(recv)),
+            send_handle: std::ptr::null_mut(),
+            recv_handle: Box::into_raw(Box::new(QuicFfiStreamHandle::new_recv(recv))),
         }
     }
 }
@@ -47,29 +164,43 @@ impl QuicFfiStreamPair {
 pub unsafe extern "C" fn dart_quic_stream_pair_free(pair: *mut QuicFfiStreamPair) {
     if !pair.is_null() {
         let stream_pair = unsafe { Box::from_raw(pair) };
-        // Free individual streams if they exist
-        if !stream_pair.send_stream.is_null() {
-            unsafe { let _ = Box::from_raw(stream_pair.send_stream); }
+        // Free individual stream handles if they exist
+        if !stream_pair.send_handle.is_null() {
+            unsafe { dart_quic_stream_handle_free(stream_pair.send_handle); }
         }
-        if !stream_pair.recv_stream.is_null() {
-            unsafe { let _ = Box::from_raw(stream_pair.recv_stream); }
+        if !stream_pair.recv_handle.is_null() {
+            unsafe { dart_quic_stream_handle_free(stream_pair.recv_handle); }
         }
     }
 }
 
-/// Free send stream
+/// Free stream handle (works for both send and recv streams)
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_send_stream_free(stream: *mut quinn::SendStream) {
-    if !stream.is_null() {
-        unsafe { let _ = Box::from_raw(stream); }
+pub unsafe extern "C" fn dart_quic_stream_handle_free(handle: *mut QuicFfiStreamHandle) {
+    if handle.is_null() {
+        return;
     }
-}
-
-/// Free recv stream
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_recv_stream_free(stream: *mut quinn::RecvStream) {
-    if !stream.is_null() {
-        unsafe { let _ = Box::from_raw(stream); }
+    
+    let handle_ref = unsafe { Box::from_raw(handle) };
+    if !handle_ref.stream.is_null() {
+        // Free the stream based on its type
+        match handle_ref.stream_type {
+            0 => {
+                // Recv stream
+                unsafe {
+                    let _ = Box::from_raw(handle_ref.stream as *mut quinn::RecvStream);
+                }
+            }
+            1 => {
+                // Send stream
+                unsafe {
+                    let _ = Box::from_raw(handle_ref.stream as *mut quinn::SendStream);
+                }
+            }
+            _ => {
+                // Invalid type, skip freeing stream (already freed handle itself)
+            }
+        }
     }
 }
 
@@ -93,7 +224,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_free(stream: *mut quinn::RecvStre
 /// 
 /// # Parameters
 /// - `executor`: QuicExecutor for async execution
-/// - `stream`: Recv stream pointer
+/// - `handle`: Stream handle (must be of type Recv)
 /// - `max_len`: Maximum bytes to read (will allocate this much memory)
 /// - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
 ///   - On success: callback(true, buf, bytes_read, null, 0) where bytes_read <= max_len
@@ -102,12 +233,12 @@ pub unsafe extern "C" fn dart_quic_recv_stream_free(stream: *mut quinn::RecvStre
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_recv_stream_read(
     executor: *mut QuicExecutor,
-    stream: *mut quinn::RecvStream,
+    handle: *mut QuicFfiStreamHandle,
     max_len: usize,
     callback: BytesCallback,
 ) {
     check_executor_bytes!(executor, callback);
-    check_ptr_bytes!(stream, callback);
+    check_recv_stream_bytes!(handle, callback);
     
     if max_len == 0 {
         let err = b"Invalid max length";
@@ -115,7 +246,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read(
         return;
     }
     
-    let stream_ptr = stream as usize;
+    let stream_ptr = unsafe { (*handle).stream } as usize;
     let callback = SendableCallback(callback);
     let exec = unsafe { &*executor };
     
@@ -170,7 +301,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read(
 /// 
 /// # Parameters
 /// - `executor`: QuicExecutor for async execution
-/// - `stream`: Recv stream pointer
+/// - `handle`: Stream handle (must be of type Recv)
 /// - `exact_len`: Exact number of bytes to read
 /// - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
 ///   - On success: callback(true, buf, exact_len, null, 0)
@@ -178,12 +309,12 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_recv_stream_read_exact(
     executor: *mut QuicExecutor,
-    stream: *mut quinn::RecvStream,
+    handle: *mut QuicFfiStreamHandle,
     exact_len: usize,
     callback: BytesCallback,
 ) {
     check_executor_bytes!(executor, callback);
-    check_ptr_bytes!(stream, callback);
+    check_recv_stream_bytes!(handle, callback);
     
     if exact_len == 0 {
         let err = b"Invalid buffer length";
@@ -191,7 +322,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read_exact(
         return;
     }
     
-    let stream_ptr = stream as usize;
+    let stream_ptr = unsafe { (*handle).stream } as usize;
     let callback = SendableCallback(callback);
     let exec = unsafe { &*executor };
     
@@ -235,7 +366,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read_exact(
 /// 
 /// # Parameters
 /// - `executor`: QuicExecutor for async execution
-/// - `stream`: Recv stream pointer
+/// - `handle`: Stream handle (must be of type Recv)
 /// - `size_limit`: Maximum bytes to read (prevents memory exhaustion)
 /// - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
 ///   - On success: callback(true, buf, total_bytes, null, 0)
@@ -243,14 +374,14 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read_exact(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_recv_stream_read_to_end(
     executor: *mut QuicExecutor,
-    stream: *mut quinn::RecvStream,
+    handle: *mut QuicFfiStreamHandle,
     size_limit: usize,
     callback: BytesCallback,
 ) {
     check_executor_bytes!(executor, callback);
-    check_ptr_bytes!(stream, callback);
+    check_recv_stream_bytes!(handle, callback);
     
-    let stream_ptr = stream as usize;
+    let stream_ptr = unsafe { (*handle).stream } as usize;
     let callback = SendableCallback(callback);
     let exec = unsafe { &*executor };
     
@@ -295,7 +426,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read_to_end(
 /// 
 /// # Parameters
 /// - `executor`: QuicExecutor for async execution
-/// - `stream`: Send stream pointer
+/// - `handle`: Stream handle (must be of type Send)
 /// - `data`: Data to write
 /// - `data_len`: Data length
 /// - `callback`: Called with (success, bytes_written, error_ptr, error_len)
@@ -304,15 +435,15 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read_to_end(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_send_stream_write(
     executor: *mut QuicExecutor,
-    stream: *mut quinn::SendStream,
+    handle: *mut QuicFfiStreamHandle,
     data: *const u8,
     data_len: usize,
     callback: crate::quic_executor::UsizeCallback,
 ) {
-    use crate::{check_executor_usize, check_ptr_usize};
+    use crate::check_executor_usize;
     
     check_executor_usize!(executor, callback);
-    check_ptr_usize!(stream, callback);
+    check_send_stream_usize!(handle, callback);
     
     if data.is_null() || data_len == 0 {
         let err = b"Invalid data";
@@ -323,7 +454,7 @@ pub unsafe extern "C" fn dart_quic_send_stream_write(
     // Copy data for async use (caller's buffer may be freed)
     let data_vec = unsafe { std::slice::from_raw_parts(data, data_len) }.to_vec();
     
-    let stream_ptr = stream as usize;
+    let stream_ptr = unsafe { (*handle).stream } as usize;
     let callback = SendableCallback(callback);
     let exec = unsafe { &*executor };
     
@@ -350,7 +481,7 @@ pub unsafe extern "C" fn dart_quic_send_stream_write(
 /// 
 /// # Parameters
 /// - `executor`: QuicExecutor for async execution
-/// - `stream`: Send stream pointer
+/// - `handle`: Stream handle (must be of type Send)
 /// - `data`: Data to write
 /// - `data_len`: Data length
 /// - `callback`: Called with (success, error_ptr, error_len)
@@ -359,15 +490,15 @@ pub unsafe extern "C" fn dart_quic_send_stream_write(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_send_stream_write_all(
     executor: *mut QuicExecutor,
-    stream: *mut quinn::SendStream,
+    handle: *mut QuicFfiStreamHandle,
     data: *const u8,
     data_len: usize,
     callback: crate::quic_executor::VoidCallback,
 ) {
-    use crate::{check_executor_void, check_ptr_void};
+    use crate::check_executor_void;
     
     check_executor_void!(executor, callback);
-    check_ptr_void!(stream, callback);
+    check_send_stream_void!(handle, callback);
     
     if data.is_null() || data_len == 0 {
         let err = b"Invalid data";
@@ -378,7 +509,7 @@ pub unsafe extern "C" fn dart_quic_send_stream_write_all(
     // Copy data for async use
     let data_vec = unsafe { std::slice::from_raw_parts(data, data_len) }.to_vec();
     
-    let stream_ptr = stream as usize;
+    let stream_ptr = unsafe { (*handle).stream } as usize;
     let callback = SendableCallback(callback);
     let exec = unsafe { &*executor };
     
@@ -404,15 +535,18 @@ pub unsafe extern "C" fn dart_quic_send_stream_write_all(
 /// It is an error to write to a stream after finishing it.
 /// 
 /// # Parameters
-/// - `stream`: Send stream pointer
+/// - `handle`: Stream handle (must be of type Send)
 /// 
 /// # Returns
 /// - 0 (Success) on success
 /// - Error code on failure
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_quic_send_stream_finish(
-    stream: *mut quinn::SendStream,
+    handle: *mut QuicFfiStreamHandle,
 ) -> i32 {
+    check_send_stream_sync!(handle);
+    
+    let stream = unsafe { (*handle).stream } as *mut quinn::SendStream;
     if stream.is_null() {
         return crate::types::QuicResult::InvalidParameter as i32;
     }
@@ -426,48 +560,6 @@ pub unsafe extern "C" fn dart_quic_send_stream_finish(
 // ============================================
 // Stream ID Operations
 // ============================================
-
-/// Get the identity of a send stream
-/// 
-/// Returns the stream ID index as a u64 value.
-/// 
-/// # Parameters
-/// - `stream`: Send stream pointer
-/// 
-/// # Returns
-/// - Stream ID index on success
-/// - 0 if stream pointer is null
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_send_stream_id(
-    stream: *mut quinn::SendStream,
-) -> u64 {
-    if stream.is_null() {
-        return 0;
-    }
-    
-    // Use the public index() method to get the u64 value
-    unsafe { (*stream).id().index() }
-}
-
-/// Get the identity of a recv stream
-/// 
-/// Returns the stream ID index as a u64 value.
-/// 
-/// # Parameters
-/// - `stream`: Recv stream pointer
-/// 
-/// # Returns
-/// - Stream ID index on success
-/// - 0 if stream pointer is null
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_recv_stream_id(
-    stream: *mut quinn::RecvStream,
-) -> u64 {
-    if stream.is_null() {
-        return 0;
-    }
-    
-    // Use the public index() method to get the u64 value
-    unsafe { (*stream).id().index() }
-}
+// Note: Stream IDs are now directly accessible via QuicFfiStreamHandle.stream_id field
+// No separate functions needed
 

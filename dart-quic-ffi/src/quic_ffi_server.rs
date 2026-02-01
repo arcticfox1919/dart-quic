@@ -28,7 +28,7 @@ pub unsafe extern "C" fn dart_quic_server_new_self_signed(
     }
     
     if bind_addr.is_null() {
-        unsafe { *result = QuicFfiResult::error_str("Bind address is required"); }
+        unsafe { (*result).write_error_str("Bind address is required"); }
         return types::QuicResult::InvalidParameter as i32;
     }
     
@@ -83,7 +83,7 @@ pub unsafe extern "C" fn dart_quic_server_new_with_cert_files(
     }
     
     if bind_addr.is_null() || cert_path.is_null() || key_path.is_null() {
-        unsafe { *result = QuicFfiResult::error_str("Bind address, cert path and key path are required"); }
+        unsafe { (*result).write_error_str("Bind address, cert path and key path are required"); }
         return types::QuicResult::InvalidParameter as i32;
     }
     

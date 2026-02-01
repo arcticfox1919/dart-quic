@@ -419,7 +419,7 @@ impl Clone for QuicEndpoint {
 ///     .bind_port = 0,    // System-assigned port
 /// };
 /// ```
-#[repr(C)]
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuicEndpointMode {
     /// Client-only mode

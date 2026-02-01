@@ -34,118 +34,75 @@ class QuicFFIBindings {
 
   set __security_cookie(int value) => ___security_cookie.value = value;
 
-  /// Create QUIC task executor
-  ffi.Pointer<QuicTaskExecutor> dart_quic_executor_new(int dart_port) {
-    return _dart_quic_executor_new(dart_port);
+  /// Free error message allocated by QuicFfiResult
+  void dart_quic_ffi_result_free_error(ffi.Pointer<QuicFfiResult> result) {
+    return _dart_quic_ffi_result_free_error(result);
+  }
+
+  late final _dart_quic_ffi_result_free_errorPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicFfiResult>)>
+      >('dart_quic_ffi_result_free_error');
+  late final _dart_quic_ffi_result_free_error =
+      _dart_quic_ffi_result_free_errorPtr
+          .asFunction<void Function(ffi.Pointer<QuicFfiResult>)>();
+
+  ffi.Pointer<QuicExecutor> dart_quic_executor_new() {
+    return _dart_quic_executor_new();
   }
 
   late final _dart_quic_executor_newPtr =
-      _lookup<
-        ffi.NativeFunction<ffi.Pointer<QuicTaskExecutor> Function(DartPort)>
-      >('dart_quic_executor_new');
+      _lookup<ffi.NativeFunction<ffi.Pointer<QuicExecutor> Function()>>(
+        'dart_quic_executor_new',
+      );
   late final _dart_quic_executor_new = _dart_quic_executor_newPtr
-      .asFunction<ffi.Pointer<QuicTaskExecutor> Function(int)>();
+      .asFunction<ffi.Pointer<QuicExecutor> Function()>();
 
-  /// Initialize QUIC executor runtime (async, returns TaskId for event tracking)
-  int dart_quic_executor_init_runtime(
-    ffi.Pointer<QuicTaskExecutor> executor,
+  void dart_quic_executor_init(
+    ffi.Pointer<QuicExecutor> executor,
     int threads,
+    BoolCallback callback,
   ) {
-    return _dart_quic_executor_init_runtime(executor, threads);
+    return _dart_quic_executor_init(executor, threads, callback);
   }
 
-  late final _dart_quic_executor_init_runtimePtr =
+  late final _dart_quic_executor_initPtr =
       _lookup<
         ffi.NativeFunction<
-          TaskId Function(ffi.Pointer<QuicTaskExecutor>, ffi.UintPtr)
-        >
-      >('dart_quic_executor_init_runtime');
-  late final _dart_quic_executor_init_runtime =
-      _dart_quic_executor_init_runtimePtr
-          .asFunction<int Function(ffi.Pointer<QuicTaskExecutor>, int)>();
-
-  /// Submit QUIC task
-  int dart_quic_executor_submit_params(
-    ffi.Pointer<QuicTaskExecutor> executor,
-    int command_type,
-    ffi.Pointer<ffi.Uint8> data_ptr,
-    int data_len,
-    ffi.Pointer<ffi.Uint64> params_ptr,
-    int params_count,
-  ) {
-    return _dart_quic_executor_submit_params(
-      executor,
-      command_type,
-      data_ptr,
-      data_len,
-      params_ptr,
-      params_count,
-    );
-  }
-
-  late final _dart_quic_executor_submit_paramsPtr =
-      _lookup<
-        ffi.NativeFunction<
-          TaskId Function(
-            ffi.Pointer<QuicTaskExecutor>,
-            ffi.Uint8,
-            ffi.Pointer<ffi.Uint8>,
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
             ffi.UintPtr,
-            ffi.Pointer<ffi.Uint64>,
-            ffi.UintPtr,
+            BoolCallback,
           )
         >
-      >('dart_quic_executor_submit_params');
-  late final _dart_quic_executor_submit_params =
-      _dart_quic_executor_submit_paramsPtr
-          .asFunction<
-            int Function(
-              ffi.Pointer<QuicTaskExecutor>,
-              int,
-              ffi.Pointer<ffi.Uint8>,
-              int,
-              ffi.Pointer<ffi.Uint64>,
-              int,
-            )
-          >();
+      >('dart_quic_executor_init');
+  late final _dart_quic_executor_init = _dart_quic_executor_initPtr
+      .asFunction<
+        void Function(ffi.Pointer<QuicExecutor>, int, BoolCallback)
+      >();
 
-  /// Check QUIC executor running status
-  bool dart_quic_executor_is_running(ffi.Pointer<QuicTaskExecutor> executor) {
+  bool dart_quic_executor_is_running(ffi.Pointer<QuicExecutor> executor) {
     return _dart_quic_executor_is_running(executor);
   }
 
   late final _dart_quic_executor_is_runningPtr =
-      _lookup<
-        ffi.NativeFunction<ffi.Bool Function(ffi.Pointer<QuicTaskExecutor>)>
-      >('dart_quic_executor_is_running');
+      _lookup<ffi.NativeFunction<ffi.Bool Function(ffi.Pointer<QuicExecutor>)>>(
+        'dart_quic_executor_is_running',
+      );
   late final _dart_quic_executor_is_running = _dart_quic_executor_is_runningPtr
-      .asFunction<bool Function(ffi.Pointer<QuicTaskExecutor>)>();
+      .asFunction<bool Function(ffi.Pointer<QuicExecutor>)>();
 
-  /// Release QUIC executor - returns immediately, closes asynchronously
-  void dart_quic_executor_free(ffi.Pointer<QuicTaskExecutor> executor) {
+  void dart_quic_executor_free(ffi.Pointer<QuicExecutor> executor) {
     return _dart_quic_executor_free(executor);
   }
 
   late final _dart_quic_executor_freePtr =
-      _lookup<
-        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicTaskExecutor>)>
-      >('dart_quic_executor_free');
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicExecutor>)>>(
+        'dart_quic_executor_free',
+      );
   late final _dart_quic_executor_free = _dart_quic_executor_freePtr
-      .asFunction<void Function(ffi.Pointer<QuicTaskExecutor>)>();
+      .asFunction<void Function(ffi.Pointer<QuicExecutor>)>();
 
-  /// Release QUIC executor - synchronous version (will block)
-  void dart_quic_executor_free_sync(ffi.Pointer<QuicTaskExecutor> executor) {
-    return _dart_quic_executor_free_sync(executor);
-  }
-
-  late final _dart_quic_executor_free_syncPtr =
-      _lookup<
-        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicTaskExecutor>)>
-      >('dart_quic_executor_free_sync');
-  late final _dart_quic_executor_free_sync = _dart_quic_executor_free_syncPtr
-      .asFunction<void Function(ffi.Pointer<QuicTaskExecutor>)>();
-
-  /// Allocate native memory
   ffi.Pointer<ffi.Uint8> dart_allocate_memory(int size) {
     return _dart_allocate_memory(size);
   }
@@ -157,7 +114,6 @@ class QuicFFIBindings {
   late final _dart_allocate_memory = _dart_allocate_memoryPtr
       .asFunction<ffi.Pointer<ffi.Uint8> Function(int)>();
 
-  /// Release native allocated memory - requires providing original allocation size
   void dart_free_memory(ffi.Pointer<ffi.Uint8> ptr, int size) {
     return _dart_free_memory(ptr, size);
   }
@@ -171,7 +127,6 @@ class QuicFFIBindings {
   late final _dart_free_memory = _dart_free_memoryPtr
       .asFunction<void Function(ffi.Pointer<ffi.Uint8>, int)>();
 
-  /// Get memory manager statistics
   ffi.Pointer<MemoryStats> dart_get_memory_stats() {
     return _dart_get_memory_stats();
   }
@@ -183,7 +138,6 @@ class QuicFFIBindings {
   late final _dart_get_memory_stats = _dart_get_memory_statsPtr
       .asFunction<ffi.Pointer<MemoryStats> Function()>();
 
-  /// Release memory statistics structure
   void dart_free_memory_stats(ffi.Pointer<MemoryStats> stats) {
     return _dart_free_memory_stats(stats);
   }
@@ -195,7 +149,6 @@ class QuicFFIBindings {
   late final _dart_free_memory_stats = _dart_free_memory_statsPtr
       .asFunction<void Function(ffi.Pointer<MemoryStats>)>();
 
-  /// Initialize global memory manager (default configuration)
   bool dart_initialize_memory_manager() {
     return _dart_initialize_memory_manager();
   }
@@ -207,8 +160,6 @@ class QuicFFIBindings {
   late final _dart_initialize_memory_manager =
       _dart_initialize_memory_managerPtr.asFunction<bool Function()>();
 
-  /// Initialize global memory manager with custom configuration
-  /// Parameter -1 means use default value, otherwise use specified value
   bool dart_initialize_memory_manager_with_config(
     int tiny_pool_size,
     int small_pool_size,
@@ -244,7 +195,6 @@ class QuicFFIBindings {
       _dart_initialize_memory_manager_with_configPtr
           .asFunction<bool Function(int, int, int, int, int, int)>();
 
-  /// Destroy global memory manager
   bool dart_destroy_memory_manager() {
     return _dart_destroy_memory_manager();
   }
@@ -256,7 +206,6 @@ class QuicFFIBindings {
   late final _dart_destroy_memory_manager = _dart_destroy_memory_managerPtr
       .asFunction<bool Function()>();
 
-  /// Check if memory manager is available
   bool dart_is_memory_manager_available() {
     return _dart_is_memory_manager_available();
   }
@@ -267,6 +216,1289 @@ class QuicFFIBindings {
       );
   late final _dart_is_memory_manager_available =
       _dart_is_memory_manager_availablePtr.asFunction<bool Function()>();
+
+  int dart_quic_transport_config_default(ffi.Pointer<QuicFfiResult> result) {
+    return _dart_quic_transport_config_default(result);
+  }
+
+  late final _dart_quic_transport_config_defaultPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<QuicFfiResult>)>
+      >('dart_quic_transport_config_default');
+  late final _dart_quic_transport_config_default =
+      _dart_quic_transport_config_defaultPtr
+          .asFunction<int Function(ffi.Pointer<QuicFfiResult>)>();
+
+  void dart_quic_transport_config_free(
+    ffi.Pointer<QuicFfiTransportConfig> config,
+  ) {
+    return _dart_quic_transport_config_free(config);
+  }
+
+  late final _dart_quic_transport_config_freePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<QuicFfiTransportConfig>)
+        >
+      >('dart_quic_transport_config_free');
+  late final _dart_quic_transport_config_free =
+      _dart_quic_transport_config_freePtr
+          .asFunction<void Function(ffi.Pointer<QuicFfiTransportConfig>)>();
+
+  /// Free stream pair structure
+  void dart_quic_stream_pair_free(ffi.Pointer<QuicFfiStreamPair> pair) {
+    return _dart_quic_stream_pair_free(pair);
+  }
+
+  late final _dart_quic_stream_pair_freePtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicFfiStreamPair>)>
+      >('dart_quic_stream_pair_free');
+  late final _dart_quic_stream_pair_free = _dart_quic_stream_pair_freePtr
+      .asFunction<void Function(ffi.Pointer<QuicFfiStreamPair>)>();
+
+  /// Free stream handle (works for both send and recv streams)
+  void dart_quic_stream_handle_free(ffi.Pointer<QuicFfiStreamHandle> handle) {
+    return _dart_quic_stream_handle_free(handle);
+  }
+
+  late final _dart_quic_stream_handle_freePtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicFfiStreamHandle>)>
+      >('dart_quic_stream_handle_free');
+  late final _dart_quic_stream_handle_free = _dart_quic_stream_handle_freePtr
+      .asFunction<void Function(ffi.Pointer<QuicFfiStreamHandle>)>();
+
+  /// Read data contiguously from the stream
+  ///
+  /// Returns the number of bytes read via callback, or None (ptr=null, len=0) if stream is finished.
+  ///
+  /// **Memory Management Note:**
+  /// This function allocates `max_len` bytes upfront to avoid an extra memory copy.
+  /// The actual bytes read (n) may be less than `max_len`, meaning some allocated memory
+  /// may be unused. Callers should:
+  /// - Use reasonable `max_len` values (e.g., 4KB-64KB, not 1MB+)
+  /// - Only access the first `n` bytes returned in the callback
+  /// - Call `dart_free_memory(ptr, max_len)` to deallocate when done
+  ///
+  /// This design prioritizes zero-copy performance over memory efficiency.
+  ///
+  /// # Parameters
+  /// - `executor`: QuicExecutor for async execution
+  /// - `handle`: Stream handle (must be of type Recv)
+  /// - `max_len`: Maximum bytes to read (will allocate this much memory)
+  /// - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
+  /// - On success: callback(true, buf, bytes_read, null, 0) where bytes_read <= max_len
+  /// - On EOF: callback(true, null, 0, null, 0)
+  /// - On error: callback(false, null, 0, error_ptr, error_len)
+  void dart_quic_recv_stream_read(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicFfiStreamHandle> handle,
+    int max_len,
+    BytesCallback callback,
+  ) {
+    return _dart_quic_recv_stream_read(executor, handle, max_len, callback);
+  }
+
+  late final _dart_quic_recv_stream_readPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicFfiStreamHandle>,
+            ffi.UintPtr,
+            BytesCallback,
+          )
+        >
+      >('dart_quic_recv_stream_read');
+  late final _dart_quic_recv_stream_read = _dart_quic_recv_stream_readPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicFfiStreamHandle>,
+          int,
+          BytesCallback,
+        )
+      >();
+
+  /// Read exact number of bytes from the stream
+  ///
+  /// Reads exactly `exact_len` bytes or fails.
+  ///
+  /// **Memory Management Note:**
+  /// This function allocates exactly `exact_len` bytes since we know the exact size needed.
+  /// No memory waste occurs. Caller must free exactly `exact_len` bytes.
+  ///
+  /// # Parameters
+  /// - `executor`: QuicExecutor for async execution
+  /// - `handle`: Stream handle (must be of type Recv)
+  /// - `exact_len`: Exact number of bytes to read
+  /// - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
+  /// - On success: callback(true, buf, exact_len, null, 0)
+  /// - On error: callback(false, null, 0, error_ptr, error_len)
+  void dart_quic_recv_stream_read_exact(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicFfiStreamHandle> handle,
+    int exact_len,
+    BytesCallback callback,
+  ) {
+    return _dart_quic_recv_stream_read_exact(
+      executor,
+      handle,
+      exact_len,
+      callback,
+    );
+  }
+
+  late final _dart_quic_recv_stream_read_exactPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicFfiStreamHandle>,
+            ffi.UintPtr,
+            BytesCallback,
+          )
+        >
+      >('dart_quic_recv_stream_read_exact');
+  late final _dart_quic_recv_stream_read_exact =
+      _dart_quic_recv_stream_read_exactPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<QuicExecutor>,
+              ffi.Pointer<QuicFfiStreamHandle>,
+              int,
+              BytesCallback,
+            )
+          >();
+
+  /// Read all remaining data from the stream
+  ///
+  /// Reads until EOF, up to `size_limit` bytes.
+  ///
+  /// # Parameters
+  /// - `executor`: QuicExecutor for async execution
+  /// - `handle`: Stream handle (must be of type Recv)
+  /// - `size_limit`: Maximum bytes to read (prevents memory exhaustion)
+  /// - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
+  /// - On success: callback(true, buf, total_bytes, null, 0)
+  /// - On error: callback(false, null, 0, error_ptr, error_len)
+  void dart_quic_recv_stream_read_to_end(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicFfiStreamHandle> handle,
+    int size_limit,
+    BytesCallback callback,
+  ) {
+    return _dart_quic_recv_stream_read_to_end(
+      executor,
+      handle,
+      size_limit,
+      callback,
+    );
+  }
+
+  late final _dart_quic_recv_stream_read_to_endPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicFfiStreamHandle>,
+            ffi.UintPtr,
+            BytesCallback,
+          )
+        >
+      >('dart_quic_recv_stream_read_to_end');
+  late final _dart_quic_recv_stream_read_to_end =
+      _dart_quic_recv_stream_read_to_endPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<QuicExecutor>,
+              ffi.Pointer<QuicFfiStreamHandle>,
+              int,
+              BytesCallback,
+            )
+          >();
+
+  /// Write bytes to the send stream
+  ///
+  /// Returns the number of bytes written. May write less than the full buffer due to
+  /// congestion and flow control.
+  ///
+  /// # Parameters
+  /// - `executor`: QuicExecutor for async execution
+  /// - `handle`: Stream handle (must be of type Send)
+  /// - `data`: Data to write
+  /// - `data_len`: Data length
+  /// - `callback`: Called with (success, bytes_written, error_ptr, error_len)
+  /// - On success: callback(true, bytes_written, null, 0)
+  /// - On error: callback(false, 0, error_ptr, error_len)
+  void dart_quic_send_stream_write(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicFfiStreamHandle> handle,
+    ffi.Pointer<ffi.Uint8> data,
+    int data_len,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_send_stream_write(
+      executor,
+      handle,
+      data,
+      data_len,
+      callback,
+    );
+  }
+
+  late final _dart_quic_send_stream_writePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicFfiStreamHandle>,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.UintPtr,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_send_stream_write');
+  late final _dart_quic_send_stream_write = _dart_quic_send_stream_writePtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicFfiStreamHandle>,
+          ffi.Pointer<ffi.Uint8>,
+          int,
+          UsizeCallback,
+        )
+      >();
+
+  /// Write all bytes to the send stream
+  ///
+  /// Writes the entire buffer, looping internally if needed due to flow control.
+  ///
+  /// # Parameters
+  /// - `executor`: QuicExecutor for async execution
+  /// - `handle`: Stream handle (must be of type Send)
+  /// - `data`: Data to write
+  /// - `data_len`: Data length
+  /// - `callback`: Called with (success, error_ptr, error_len)
+  /// - On success: callback(true, null, 0)
+  /// - On error: callback(false, error_ptr, error_len)
+  void dart_quic_send_stream_write_all(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicFfiStreamHandle> handle,
+    ffi.Pointer<ffi.Uint8> data,
+    int data_len,
+    VoidCallback callback,
+  ) {
+    return _dart_quic_send_stream_write_all(
+      executor,
+      handle,
+      data,
+      data_len,
+      callback,
+    );
+  }
+
+  late final _dart_quic_send_stream_write_allPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicFfiStreamHandle>,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.UintPtr,
+            VoidCallback,
+          )
+        >
+      >('dart_quic_send_stream_write_all');
+  late final _dart_quic_send_stream_write_all =
+      _dart_quic_send_stream_write_allPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<QuicExecutor>,
+              ffi.Pointer<QuicFfiStreamHandle>,
+              ffi.Pointer<ffi.Uint8>,
+              int,
+              VoidCallback,
+            )
+          >();
+
+  /// Notify the peer that no more data will be written to this stream (sync)
+  ///
+  /// It is an error to write to a stream after finishing it.
+  ///
+  /// # Parameters
+  /// - `handle`: Stream handle (must be of type Send)
+  ///
+  /// # Returns
+  /// - 0 (Success) on success
+  /// - Error code on failure
+  int dart_quic_send_stream_finish(ffi.Pointer<QuicFfiStreamHandle> handle) {
+    return _dart_quic_send_stream_finish(handle);
+  }
+
+  late final _dart_quic_send_stream_finishPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<QuicFfiStreamHandle>)>
+      >('dart_quic_send_stream_finish');
+  late final _dart_quic_send_stream_finish = _dart_quic_send_stream_finishPtr
+      .asFunction<int Function(ffi.Pointer<QuicFfiStreamHandle>)>();
+
+  /// Create a QUIC endpoint with specified configuration
+  ///
+  /// # Parameters
+  /// - `config`: Endpoint configuration (mode, bind IP, bind port)
+  /// - `client_config`: Client config handle (nullable based on mode)
+  /// - `server_config`: Server config handle (nullable based on mode)
+  /// - `result`: Output parameter for endpoint pointer or error
+  ///
+  /// # Returns
+  /// - 0 on success (endpoint pointer in result)
+  /// - Non-zero error code on failure
+  ///
+  /// # Mode Requirements
+  /// - ClientOnly: client_config must be provided, server_config must be null
+  /// - ServerOnly: server_config must be provided, client_config must be null
+  /// - Bidirectional: both client_config and server_config must be provided
+  ///
+  /// # Safety
+  /// - config and result must be valid pointers
+  /// - client_config/server_config must be valid or null based on mode
+  /// Create a QUIC endpoint
+  ///
+  /// # Parameters
+  /// - `config`: Endpoint configuration (mode and bind address)
+  /// - `client`: QuicClient pointer (nullable, required for Client/Bidirectional modes, will be consumed)
+  /// - `server`: QuicServer pointer (nullable, required for Server/Bidirectional modes, will be consumed)
+  /// - `result`: Result output structure
+  ///
+  /// # Returns
+  /// - 0 on success (result.data contains endpoint pointer)
+  /// - Error code on failure (result.error contains error details)
+  ///
+  /// # Mode Requirements
+  /// - ClientOnly: client required, server must be null
+  /// - ServerOnly: server required, client must be null
+  /// - Bidirectional: both client and server must be provided
+  ///
+  /// # Safety
+  /// - config and result must be valid pointers
+  /// - client/server must be valid or null based on mode
+  /// - client/server will be consumed and must not be used after this call
+  int dart_quic_endpoint_create(
+    ffi.Pointer<QuicFfiEndpointConfig> config,
+    ffi.Pointer<QuicFfiClientConfig> client_config,
+    ffi.Pointer<QuicFfiServerConfig> server_config,
+    ffi.Pointer<QuicFfiResult> result,
+  ) {
+    return _dart_quic_endpoint_create(
+      config,
+      client_config,
+      server_config,
+      result,
+    );
+  }
+
+  late final _dart_quic_endpoint_createPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<QuicFfiEndpointConfig>,
+            ffi.Pointer<QuicFfiClientConfig>,
+            ffi.Pointer<QuicFfiServerConfig>,
+            ffi.Pointer<QuicFfiResult>,
+          )
+        >
+      >('dart_quic_endpoint_create');
+  late final _dart_quic_endpoint_create = _dart_quic_endpoint_createPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<QuicFfiEndpointConfig>,
+          ffi.Pointer<QuicFfiClientConfig>,
+          ffi.Pointer<QuicFfiServerConfig>,
+          ffi.Pointer<QuicFfiResult>,
+        )
+      >();
+
+  /// Free an endpoint and close all connections
+  ///
+  /// # Parameters
+  /// - `endpoint`: Endpoint pointer to free
+  ///
+  /// # Safety
+  /// - endpoint must be a valid pointer created by dart_quic_endpoint_create
+  /// - Must not be used after this call
+  void dart_quic_endpoint_free(ffi.Pointer<QuicEndpoint> endpoint) {
+    return _dart_quic_endpoint_free(endpoint);
+  }
+
+  late final _dart_quic_endpoint_freePtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicEndpoint>)>>(
+        'dart_quic_endpoint_free',
+      );
+  late final _dart_quic_endpoint_free = _dart_quic_endpoint_freePtr
+      .asFunction<void Function(ffi.Pointer<QuicEndpoint>)>();
+
+  /// Connect to a remote server (async)
+  ///
+  /// # Parameters
+  /// - `executor`: Executor pointer for async operations
+  /// - `endpoint`: Endpoint pointer
+  /// - `server_addr`: Server address string (e.g., "127.0.0.1:4433")
+  /// - `server_name`: Server name for SNI (e.g., "localhost")
+  /// - `callback`: Callback invoked with connection pointer (or 0 on error)
+  ///
+  /// # Safety
+  /// - All pointers must be valid
+  /// - Endpoint must have client capability (ClientOnly or Bidirectional mode)
+  /// - server_addr and server_name must be valid null-terminated C strings
+  void dart_quic_endpoint_connect(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicEndpoint> endpoint,
+    ffi.Pointer<ffi.Int8> server_addr,
+    ffi.Pointer<ffi.Int8> server_name,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_endpoint_connect(
+      executor,
+      endpoint,
+      server_addr,
+      server_name,
+      callback,
+    );
+  }
+
+  late final _dart_quic_endpoint_connectPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicEndpoint>,
+            ffi.Pointer<ffi.Int8>,
+            ffi.Pointer<ffi.Int8>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_endpoint_connect');
+  late final _dart_quic_endpoint_connect = _dart_quic_endpoint_connectPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicEndpoint>,
+          ffi.Pointer<ffi.Int8>,
+          ffi.Pointer<ffi.Int8>,
+          UsizeCallback,
+        )
+      >();
+
+  /// Accept an incoming connection (async)
+  ///
+  /// # Parameters
+  /// - `executor`: Executor pointer for async operations
+  /// - `endpoint`: Endpoint pointer
+  /// - `callback`: Callback invoked with connection pointer (or 0 on error/close)
+  ///
+  /// # Returns
+  /// - Connection pointer on success
+  /// - 0 if endpoint is closing or on error
+  ///
+  /// # Safety
+  /// - All pointers must be valid
+  /// - Endpoint must have server capability (ServerOnly or Bidirectional mode)
+  void dart_quic_endpoint_accept(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicEndpoint> endpoint,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_endpoint_accept(executor, endpoint, callback);
+  }
+
+  late final _dart_quic_endpoint_acceptPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicEndpoint>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_endpoint_accept');
+  late final _dart_quic_endpoint_accept = _dart_quic_endpoint_acceptPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicEndpoint>,
+          UsizeCallback,
+        )
+      >();
+
+  /// Get the local bound address of the endpoint
+  ///
+  /// # Parameters
+  /// - `endpoint`: Endpoint pointer
+  /// - `out_ip`: Output buffer for IP address (network byte order)
+  /// - `out_port`: Output buffer for port (host byte order)
+  ///
+  /// # Returns
+  /// - 0 on success
+  /// - Non-zero error code on failure
+  ///
+  /// # Safety
+  /// - endpoint must be a valid pointer
+  /// - out_ip and out_port must be valid pointers
+  int dart_quic_endpoint_local_addr(
+    ffi.Pointer<QuicEndpoint> endpoint,
+    ffi.Pointer<ffi.Uint32> out_ip,
+    ffi.Pointer<ffi.Uint16> out_port,
+  ) {
+    return _dart_quic_endpoint_local_addr(endpoint, out_ip, out_port);
+  }
+
+  late final _dart_quic_endpoint_local_addrPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<QuicEndpoint>,
+            ffi.Pointer<ffi.Uint32>,
+            ffi.Pointer<ffi.Uint16>,
+          )
+        >
+      >('dart_quic_endpoint_local_addr');
+  late final _dart_quic_endpoint_local_addr = _dart_quic_endpoint_local_addrPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<QuicEndpoint>,
+          ffi.Pointer<ffi.Uint32>,
+          ffi.Pointer<ffi.Uint16>,
+        )
+      >();
+
+  /// Get the number of currently open connections
+  ///
+  /// # Parameters
+  /// - `endpoint`: Endpoint pointer
+  ///
+  /// # Returns
+  /// - Number of open connections
+  /// - 0 if endpoint is null
+  int dart_quic_endpoint_open_connections(ffi.Pointer<QuicEndpoint> endpoint) {
+    return _dart_quic_endpoint_open_connections(endpoint);
+  }
+
+  late final _dart_quic_endpoint_open_connectionsPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.UintPtr Function(ffi.Pointer<QuicEndpoint>)>
+      >('dart_quic_endpoint_open_connections');
+  late final _dart_quic_endpoint_open_connections =
+      _dart_quic_endpoint_open_connectionsPtr
+          .asFunction<int Function(ffi.Pointer<QuicEndpoint>)>();
+
+  /// Check if endpoint has client capability
+  ///
+  /// # Parameters
+  /// - `endpoint`: Endpoint pointer
+  ///
+  /// # Returns
+  /// - 1 if endpoint can connect to remote servers
+  /// - 0 otherwise
+  int dart_quic_endpoint_can_connect(ffi.Pointer<QuicEndpoint> endpoint) {
+    return _dart_quic_endpoint_can_connect(endpoint);
+  }
+
+  late final _dart_quic_endpoint_can_connectPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<QuicEndpoint>)>
+      >('dart_quic_endpoint_can_connect');
+  late final _dart_quic_endpoint_can_connect =
+      _dart_quic_endpoint_can_connectPtr
+          .asFunction<int Function(ffi.Pointer<QuicEndpoint>)>();
+
+  /// Check if endpoint has server capability
+  ///
+  /// # Parameters
+  /// - `endpoint`: Endpoint pointer
+  ///
+  /// # Returns
+  /// - 1 if endpoint can accept incoming connections
+  /// - 0 otherwise
+  int dart_quic_endpoint_can_accept(ffi.Pointer<QuicEndpoint> endpoint) {
+    return _dart_quic_endpoint_can_accept(endpoint);
+  }
+
+  late final _dart_quic_endpoint_can_acceptPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<QuicEndpoint>)>
+      >('dart_quic_endpoint_can_accept');
+  late final _dart_quic_endpoint_can_accept = _dart_quic_endpoint_can_acceptPtr
+      .asFunction<int Function(ffi.Pointer<QuicEndpoint>)>();
+
+  /// Close the endpoint and all connections gracefully
+  ///
+  /// # Parameters
+  /// - `endpoint`: Endpoint pointer
+  /// - `error_code`: Application error code
+  /// - `reason`: Reason bytes (nullable)
+  /// - `reason_len`: Length of reason bytes
+  ///
+  /// # Safety
+  /// - endpoint must be a valid pointer
+  /// - reason must be valid for reason_len bytes if not null
+  void dart_quic_endpoint_close(
+    ffi.Pointer<QuicEndpoint> endpoint,
+    int error_code,
+    ffi.Pointer<ffi.Uint8> reason,
+    int reason_len,
+  ) {
+    return _dart_quic_endpoint_close(endpoint, error_code, reason, reason_len);
+  }
+
+  late final _dart_quic_endpoint_closePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicEndpoint>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.UintPtr,
+          )
+        >
+      >('dart_quic_endpoint_close');
+  late final _dart_quic_endpoint_close = _dart_quic_endpoint_closePtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicEndpoint>,
+          int,
+          ffi.Pointer<ffi.Uint8>,
+          int,
+        )
+      >();
+
+  /// Wait for all connections to close (async)
+  ///
+  /// # Parameters
+  /// - `executor`: Executor pointer for async operations
+  /// - `endpoint`: Endpoint pointer
+  /// - `callback`: Callback invoked when all connections are closed
+  ///
+  /// # Safety
+  /// - All pointers must be valid
+  /// - Should be called after dart_quic_endpoint_close
+  void dart_quic_endpoint_wait_idle(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicEndpoint> endpoint,
+    VoidCallback callback,
+  ) {
+    return _dart_quic_endpoint_wait_idle(executor, endpoint, callback);
+  }
+
+  late final _dart_quic_endpoint_wait_idlePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicEndpoint>,
+            VoidCallback,
+          )
+        >
+      >('dart_quic_endpoint_wait_idle');
+  late final _dart_quic_endpoint_wait_idle = _dart_quic_endpoint_wait_idlePtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicEndpoint>,
+          VoidCallback,
+        )
+      >();
+
+  /// Create QUIC client with unified configuration
+  ///
+  /// This is the unified API for creating QUIC clients with various configurations:
+  /// - Trust modes: skip verification, system roots, custom CA (DER/PEM/file)
+  /// - Client certificates (mTLS): none, DER memory, PEM file, DER file
+  /// - Transport configuration
+  /// - Bind address
+  ///
+  /// Returns error code, result written to `result` parameter
+  int dart_quic_client_new(
+    ffi.Pointer<QuicFfiClientConfig> config,
+    ffi.Pointer<QuicFfiResult> result,
+  ) {
+    return _dart_quic_client_new(config, result);
+  }
+
+  late final _dart_quic_client_newPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<QuicFfiClientConfig>,
+            ffi.Pointer<QuicFfiResult>,
+          )
+        >
+      >('dart_quic_client_new');
+  late final _dart_quic_client_new = _dart_quic_client_newPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<QuicFfiClientConfig>,
+          ffi.Pointer<QuicFfiResult>,
+        )
+      >();
+
+  /// Free client
+  void dart_quic_client_free(ffi.Pointer<QuicClient> client) {
+    return _dart_quic_client_free(client);
+  }
+
+  late final _dart_quic_client_freePtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicClient>)>>(
+        'dart_quic_client_free',
+      );
+  late final _dart_quic_client_free = _dart_quic_client_freePtr
+      .asFunction<void Function(ffi.Pointer<QuicClient>)>();
+
+  /// Close client (sync)
+  /// Returns error code
+  int dart_quic_client_close(
+    ffi.Pointer<QuicClient> client,
+    int error_code,
+    ffi.Pointer<ffi.Uint8> reason,
+    int reason_len,
+  ) {
+    return _dart_quic_client_close(client, error_code, reason, reason_len);
+  }
+
+  late final _dart_quic_client_closePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<QuicClient>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.UintPtr,
+          )
+        >
+      >('dart_quic_client_close');
+  late final _dart_quic_client_close = _dart_quic_client_closePtr
+      .asFunction<
+        int Function(ffi.Pointer<QuicClient>, int, ffi.Pointer<ffi.Uint8>, int)
+      >();
+
+  /// Connect to server asynchronously
+  ///
+  /// Callback receives QuicConnectionHandle pointer on success.
+  /// The handle contains:
+  /// - connection pointer (for subsequent operations)
+  /// - stable_id (connection ID)
+  /// - remote_addr (remote address string)
+  ///
+  /// Use `dart_quic_connection_handle_free` to free the handle.
+  void dart_quic_client_connect(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicClient> client,
+    ffi.Pointer<ffi.Char> server_addr,
+    ffi.Pointer<ffi.Char> server_name,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_client_connect(
+      executor,
+      client,
+      server_addr,
+      server_name,
+      callback,
+    );
+  }
+
+  late final _dart_quic_client_connectPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicClient>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_client_connect');
+  late final _dart_quic_client_connect = _dart_quic_client_connectPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicClient>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          UsizeCallback,
+        )
+      >();
+
+  /// Wait for client to become idle
+  void dart_quic_client_wait_idle(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicClient> client,
+    VoidCallback callback,
+  ) {
+    return _dart_quic_client_wait_idle(executor, client, callback);
+  }
+
+  late final _dart_quic_client_wait_idlePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicClient>,
+            VoidCallback,
+          )
+        >
+      >('dart_quic_client_wait_idle');
+  late final _dart_quic_client_wait_idle = _dart_quic_client_wait_idlePtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicClient>,
+          VoidCallback,
+        )
+      >();
+
+  /// Free connection handle and its resources
+  ///
+  /// This frees:
+  /// - The connection itself
+  /// - The remote address string
+  /// - The handle structure
+  void dart_quic_connection_handle_free(
+    ffi.Pointer<QuicConnectionHandle> handle,
+  ) {
+    return _dart_quic_connection_handle_free(handle);
+  }
+
+  late final _dart_quic_connection_handle_freePtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicConnectionHandle>)>
+      >('dart_quic_connection_handle_free');
+  late final _dart_quic_connection_handle_free =
+      _dart_quic_connection_handle_freePtr
+          .asFunction<void Function(ffi.Pointer<QuicConnectionHandle>)>();
+
+  /// Close connection (sync)
+  ///
+  /// # Parameters
+  /// - `handle`: Connection handle
+  /// - `error_code`: Application error code
+  /// - `reason`: Close reason bytes (nullable)
+  /// - `reason_len`: Length of reason bytes
+  void dart_quic_connection_close(
+    ffi.Pointer<QuicConnectionHandle> handle,
+    int error_code,
+    ffi.Pointer<ffi.Uint8> reason,
+    int reason_len,
+  ) {
+    return _dart_quic_connection_close(handle, error_code, reason, reason_len);
+  }
+
+  late final _dart_quic_connection_closePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicConnectionHandle>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.UintPtr,
+          )
+        >
+      >('dart_quic_connection_close');
+  late final _dart_quic_connection_close = _dart_quic_connection_closePtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicConnectionHandle>,
+          int,
+          ffi.Pointer<ffi.Uint8>,
+          int,
+        )
+      >();
+
+  /// Open bidirectional stream
+  ///
+  /// Returns QuicFfiStreamPair structure pointer via UsizeCallback.
+  ///
+  /// # Parameters
+  /// - `executor`: Executor for async operations
+  /// - `handle`: Connection handle
+  /// - `callback`: Callback receiving stream pair pointer
+  void dart_quic_connection_open_bi(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicConnectionHandle> handle,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_connection_open_bi(executor, handle, callback);
+  }
+
+  late final _dart_quic_connection_open_biPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicConnectionHandle>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_connection_open_bi');
+  late final _dart_quic_connection_open_bi = _dart_quic_connection_open_biPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicConnectionHandle>,
+          UsizeCallback,
+        )
+      >();
+
+  /// Open unidirectional stream (send only)
+  ///
+  /// Returns QuicFfiStreamPair structure pointer via UsizeCallback.
+  void dart_quic_connection_open_uni(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicConnectionHandle> handle,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_connection_open_uni(executor, handle, callback);
+  }
+
+  late final _dart_quic_connection_open_uniPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicConnectionHandle>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_connection_open_uni');
+  late final _dart_quic_connection_open_uni = _dart_quic_connection_open_uniPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicConnectionHandle>,
+          UsizeCallback,
+        )
+      >();
+
+  /// Accept bidirectional stream
+  ///
+  /// Returns QuicFfiStreamPair structure pointer via UsizeCallback.
+  void dart_quic_connection_accept_bi(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicConnectionHandle> handle,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_connection_accept_bi(executor, handle, callback);
+  }
+
+  late final _dart_quic_connection_accept_biPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicConnectionHandle>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_connection_accept_bi');
+  late final _dart_quic_connection_accept_bi =
+      _dart_quic_connection_accept_biPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<QuicExecutor>,
+              ffi.Pointer<QuicConnectionHandle>,
+              UsizeCallback,
+            )
+          >();
+
+  /// Accept unidirectional stream (recv only)
+  ///
+  /// Returns QuicFfiStreamPair structure pointer via UsizeCallback.
+  void dart_quic_connection_accept_uni(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicConnectionHandle> handle,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_connection_accept_uni(executor, handle, callback);
+  }
+
+  late final _dart_quic_connection_accept_uniPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicConnectionHandle>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_connection_accept_uni');
+  late final _dart_quic_connection_accept_uni =
+      _dart_quic_connection_accept_uniPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<QuicExecutor>,
+              ffi.Pointer<QuicConnectionHandle>,
+              UsizeCallback,
+            )
+          >();
+
+  /// Send datagram (sync, unreliable)
+  ///
+  /// # Parameters
+  /// - `handle`: Connection handle
+  /// - `data`: Data to send
+  /// - `data_len`: Length of data
+  ///
+  /// # Returns
+  /// - QuicResult::Success on success
+  /// - Error code on failure
+  int dart_quic_connection_send_datagram(
+    ffi.Pointer<QuicConnectionHandle> handle,
+    ffi.Pointer<ffi.Uint8> data,
+    int data_len,
+  ) {
+    return _dart_quic_connection_send_datagram(handle, data, data_len);
+  }
+
+  late final _dart_quic_connection_send_datagramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<QuicConnectionHandle>,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.UintPtr,
+          )
+        >
+      >('dart_quic_connection_send_datagram');
+  late final _dart_quic_connection_send_datagram =
+      _dart_quic_connection_send_datagramPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<QuicConnectionHandle>,
+              ffi.Pointer<ffi.Uint8>,
+              int,
+            )
+          >();
+
+  /// Read datagram (async)
+  ///
+  /// # Parameters
+  /// - `executor`: Executor for async operations
+  /// - `handle`: Connection handle
+  /// - `callback`: Callback receiving datagram data
+  void dart_quic_connection_read_datagram(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicConnectionHandle> handle,
+    BytesCallback callback,
+  ) {
+    return _dart_quic_connection_read_datagram(executor, handle, callback);
+  }
+
+  late final _dart_quic_connection_read_datagramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicConnectionHandle>,
+            BytesCallback,
+          )
+        >
+      >('dart_quic_connection_read_datagram');
+  late final _dart_quic_connection_read_datagram =
+      _dart_quic_connection_read_datagramPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<QuicExecutor>,
+              ffi.Pointer<QuicConnectionHandle>,
+              BytesCallback,
+            )
+          >();
+
+  /// Create server with self-signed certificate (testing only!)
+  /// Returns error code, result written to `result` parameter
+  int dart_quic_server_new_self_signed(
+    ffi.Pointer<ffi.Char> bind_addr,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> san_list,
+    int san_count,
+    ffi.Pointer<QuicFfiTransportConfig> transport_config,
+    ffi.Pointer<QuicFfiResult> result,
+  ) {
+    return _dart_quic_server_new_self_signed(
+      bind_addr,
+      san_list,
+      san_count,
+      transport_config,
+      result,
+    );
+  }
+
+  late final _dart_quic_server_new_self_signedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Pointer<ffi.Char>>,
+            ffi.UintPtr,
+            ffi.Pointer<QuicFfiTransportConfig>,
+            ffi.Pointer<QuicFfiResult>,
+          )
+        >
+      >('dart_quic_server_new_self_signed');
+  late final _dart_quic_server_new_self_signed =
+      _dart_quic_server_new_self_signedPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Pointer<ffi.Char>>,
+              int,
+              ffi.Pointer<QuicFfiTransportConfig>,
+              ffi.Pointer<QuicFfiResult>,
+            )
+          >();
+
+  /// Create server with PEM certificate files
+  /// Returns error code, result written to `result` parameter
+  int dart_quic_server_new_with_cert_files(
+    ffi.Pointer<ffi.Char> bind_addr,
+    ffi.Pointer<ffi.Char> cert_path,
+    ffi.Pointer<ffi.Char> key_path,
+    ffi.Pointer<QuicFfiTransportConfig> transport_config,
+    ffi.Pointer<QuicFfiResult> result,
+  ) {
+    return _dart_quic_server_new_with_cert_files(
+      bind_addr,
+      cert_path,
+      key_path,
+      transport_config,
+      result,
+    );
+  }
+
+  late final _dart_quic_server_new_with_cert_filesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<QuicFfiTransportConfig>,
+            ffi.Pointer<QuicFfiResult>,
+          )
+        >
+      >('dart_quic_server_new_with_cert_files');
+  late final _dart_quic_server_new_with_cert_files =
+      _dart_quic_server_new_with_cert_filesPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<QuicFfiTransportConfig>,
+              ffi.Pointer<QuicFfiResult>,
+            )
+          >();
+
+  /// Free server
+  void dart_quic_server_free(ffi.Pointer<QuicServer> server) {
+    return _dart_quic_server_free(server);
+  }
+
+  late final _dart_quic_server_freePtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicServer>)>>(
+        'dart_quic_server_free',
+      );
+  late final _dart_quic_server_free = _dart_quic_server_freePtr
+      .asFunction<void Function(ffi.Pointer<QuicServer>)>();
+
+  /// Close server
+  void dart_quic_server_close(
+    ffi.Pointer<QuicServer> server,
+    int error_code,
+    ffi.Pointer<ffi.Uint8> reason,
+    int reason_len,
+  ) {
+    return _dart_quic_server_close(server, error_code, reason, reason_len);
+  }
+
+  late final _dart_quic_server_closePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicServer>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.UintPtr,
+          )
+        >
+      >('dart_quic_server_close');
+  late final _dart_quic_server_close = _dart_quic_server_closePtr
+      .asFunction<
+        void Function(ffi.Pointer<QuicServer>, int, ffi.Pointer<ffi.Uint8>, int)
+      >();
+
+  /// Get server local address
+  bool dart_quic_server_local_addr(
+    ffi.Pointer<QuicServer> server,
+    ffi.Pointer<ffi.Pointer<ffi.Uint8>> addr_out,
+    ffi.Pointer<ffi.UintPtr> len_out,
+  ) {
+    return _dart_quic_server_local_addr(server, addr_out, len_out);
+  }
+
+  late final _dart_quic_server_local_addrPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Bool Function(
+            ffi.Pointer<QuicServer>,
+            ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+            ffi.Pointer<ffi.UintPtr>,
+          )
+        >
+      >('dart_quic_server_local_addr');
+  late final _dart_quic_server_local_addr = _dart_quic_server_local_addrPtr
+      .asFunction<
+        bool Function(
+          ffi.Pointer<QuicServer>,
+          ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+          ffi.Pointer<ffi.UintPtr>,
+        )
+      >();
+
+  /// Accept incoming connection
+  ///
+  /// Callback receives QuicConnectionHandle pointer on success.
+  /// The handle contains:
+  /// - connection pointer (for subsequent operations)
+  /// - stable_id (connection ID)
+  /// - remote_addr (remote address string)
+  ///
+  /// Use `dart_quic_connection_handle_free` to free the handle.
+  void dart_quic_server_accept(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicServer> server,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_server_accept(executor, server, callback);
+  }
+
+  late final _dart_quic_server_acceptPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicServer>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_server_accept');
+  late final _dart_quic_server_accept = _dart_quic_server_acceptPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicServer>,
+          UsizeCallback,
+        )
+      >();
 }
 
 typedef va_list = ffi.Pointer<ffi.Char>;
@@ -458,15 +1690,517 @@ final class _LDBL12 extends ffi.Struct {
   external ffi.Array<ffi.UnsignedChar> ld12;
 }
 
-final class AsyncDartTaskExecutor_QuicCommandHandler extends ffi.Opaque {}
+/// Endpoint operation mode (for C API)
+///
+/// The QUIC protocol allows the same UDP port to act as both client and server simultaneously,
+/// which is an important distinction from traditional TCP.
+/// This enum is used to specify the endpoint's operation mode at the FFI layer.
+///
+/// # Usage Example
+///
+/// ```c
+/// // C API example
+/// FfiEndpointConfig config = {
+/// .mode = QuicEndpointMode_ClientOnly,  // Client-only
+/// .bind_ip = 0,      // INADDR_ANY
+/// .bind_port = 0,    // System-assigned port
+/// };
+/// ```
+enum QuicEndpointMode {
+  /// Client-only mode
+  ///
+  /// - Can only use `connect()` to initiate outgoing connections
+  /// - Cannot use `accept()` to accept incoming connections
+  /// - Suitable for: regular client applications, crawlers, API callers
+  /// - Bind address typically `0.0.0.0:0` (system auto-assigned port)
+  ClientOnly(0),
+
+  /// Server-only mode
+  ///
+  /// - Can only use `accept()` to accept incoming connections
+  /// - Cannot use `connect()` to initiate outgoing connections
+  /// - Suitable for: web servers, API services, game servers
+  /// - Bind address typically `0.0.0.0:4433` (fixed port)
+  ServerOnly(1),
+
+  /// Bidirectional mode (simultaneously client and server)
+  ///
+  /// - Supports both `connect()` and `accept()`
+  /// - The same UDP port can both initiate and accept connections
+  /// - Suitable for:
+  /// - P2P networks (BitTorrent, IPFS)
+  /// - Game server clusters (accept players and connect to other servers)
+  /// - Microservices (bidirectional inter-service communication)
+  /// - NAT traversal scenarios
+  Bidirectional(2);
+
+  final int value;
+  const QuicEndpointMode(this.value);
+
+  static QuicEndpointMode fromValue(int value) => switch (value) {
+    0 => ClientOnly,
+    1 => ServerOnly,
+    2 => Bidirectional,
+    _ => throw ArgumentError('Unknown value for QuicEndpointMode: $value'),
+  };
+}
+
+typedef QuicEndpointMode$1 = ffi.Uint8;
+typedef DartQuicEndpointMode = int;
+
+/// Client certificate mode (mTLS)
+enum QuicFfiClientCertMode {
+  /// No client certificate
+  None(0),
+
+  /// Load from DER memory
+  Der(1),
+
+  /// Load from PEM file
+  PemFile(2),
+
+  /// Load from DER file
+  DerFile(3);
+
+  final int value;
+  const QuicFfiClientCertMode(this.value);
+
+  static QuicFfiClientCertMode fromValue(int value) => switch (value) {
+    0 => None,
+    1 => Der,
+    2 => PemFile,
+    3 => DerFile,
+    _ => throw ArgumentError('Unknown value for QuicFfiClientCertMode: $value'),
+  };
+}
+
+typedef QuicFfiClientCertMode$1 = ffi.Uint8;
+typedef DartQuicFfiClientCertMode = int;
+
+/// Trust mode
+enum QuicFfiTrustMode {
+  /// Skip verification (testing only! dangerous!)
+  SkipVerification(0),
+
+  /// Use system root certificates (recommended for production)
+  SystemRoots(1),
+
+  /// Use custom CA (DER in memory)
+  CustomCaDer(2),
+
+  /// Use custom CA (PEM file)
+  CustomCaPemFile(3),
+
+  /// Use custom CA (DER file)
+  CustomCaDerFile(4);
+
+  final int value;
+  const QuicFfiTrustMode(this.value);
+
+  static QuicFfiTrustMode fromValue(int value) => switch (value) {
+    0 => SkipVerification,
+    1 => SystemRoots,
+    2 => CustomCaDer,
+    3 => CustomCaPemFile,
+    4 => CustomCaDerFile,
+    _ => throw ArgumentError('Unknown value for QuicFfiTrustMode: $value'),
+  };
+}
+
+typedef QuicFfiTrustMode$1 = ffi.Uint8;
+typedef DartQuicFfiTrustMode = int;
 
 final class MemoryStats extends ffi.Opaque {}
 
-typedef QuicTaskExecutor = AsyncDartTaskExecutor_QuicCommandHandler;
-typedef DartPort = ffi.Int64;
-typedef DartDartPort = int;
-typedef TaskId = ffi.Uint64;
-typedef DartTaskId = int;
+final class QuicClient extends ffi.Opaque {}
+
+final class QuicConnection extends ffi.Opaque {}
+
+final class QuicEndpoint extends ffi.Opaque {}
+
+final class QuicExecutor extends ffi.Opaque {}
+
+final class QuicServer extends ffi.Opaque {}
+
+/// Generic FFI result structure for C API interop.
+/// Used for sync operations that need to return both a handle and potential error.
+final class QuicFfiResult extends ffi.Struct {
+  external ffi.Pointer<ffi.Void> handle;
+
+  external ffi.Pointer<ffi.Uint8> error_msg;
+
+  @ffi.UintPtr()
+  external int error_msg_len;
+}
+
+typedef BoolCallbackFunction =
+    ffi.Void Function(
+      ffi.Bool success,
+      ffi.Bool value,
+      ffi.Pointer<ffi.Uint8> error_ptr,
+      ffi.UintPtr error_len,
+    );
+typedef DartBoolCallbackFunction =
+    void Function(
+      bool success,
+      bool value,
+      ffi.Pointer<ffi.Uint8> error_ptr,
+      int error_len,
+    );
+
+/// Callback for bool result
+typedef BoolCallback = ffi.Pointer<ffi.NativeFunction<BoolCallbackFunction>>;
+
+/// FFI-friendly transport configuration
+///
+/// # C Language Usage Example
+///
+/// ```c
+/// QuicFfiTransportConfig transport = {
+/// .max_idle_timeout_ms = 30000,
+/// .keep_alive_interval_ms = 15000,
+/// // ...
+/// };
+/// ```
+final class QuicFfiTransportConfig extends ffi.Struct {
+  @ffi.Uint64()
+  external int max_idle_timeout_ms;
+
+  @ffi.Uint64()
+  external int keep_alive_interval_ms;
+
+  @ffi.Uint32()
+  external int max_concurrent_bi_streams;
+
+  @ffi.Uint32()
+  external int max_concurrent_uni_streams;
+
+  @ffi.Uint32()
+  external int stream_receive_window;
+
+  @ffi.Uint64()
+  external int send_window;
+
+  @ffi.Uint64()
+  external int initial_rtt_ms;
+
+  @ffi.Uint16()
+  external int initial_mtu;
+
+  @ffi.Uint16()
+  external int min_mtu;
+
+  @ffi.Bool()
+  external bool enable_mtu_discovery;
+
+  @ffi.Uint32()
+  external int datagram_receive_buffer_size;
+
+  @ffi.Uint32()
+  external int datagram_send_buffer_size;
+
+  @ffi.Uint8()
+  external int congestion_controller;
+
+  @ffi.Bool()
+  external bool allow_spin;
+
+  @ffi.Bool()
+  external bool enable_gso;
+}
+
+/// Unified stream handle with metadata
+///
+/// FFI-friendly structure wrapping a stream pointer, its ID, and type.
+/// The stream pointer can be either `SendStream*` or `RecvStream*` depending on `stream_type`.
+final class QuicFfiStreamHandle extends ffi.Struct {
+  /// Stream pointer (cast to void* for FFI, actual type depends on stream_type)
+  external ffi.Pointer<ffi.Void> stream;
+
+  /// Stream ID
+  @ffi.Uint64()
+  external int stream_id;
+
+  /// Stream type (0 = Recv, 1 = Send)
+  @ffi.Uint8()
+  external int stream_type;
+}
+
+/// C-compatible structure for stream pair
+/// Contains both send and recv stream handles (one or both may be null)
+final class QuicFfiStreamPair extends ffi.Struct {
+  /// Send stream handle (null if not applicable)
+  external ffi.Pointer<QuicFfiStreamHandle> send_handle;
+
+  /// Recv stream handle (null if not applicable)
+  external ffi.Pointer<QuicFfiStreamHandle> recv_handle;
+}
+
+typedef BytesCallbackFunction =
+    ffi.Void Function(
+      ffi.Bool success,
+      ffi.Pointer<ffi.Uint8> ptr,
+      ffi.UintPtr len,
+      ffi.Pointer<ffi.Uint8> error_ptr,
+      ffi.UintPtr error_len,
+    );
+typedef DartBytesCallbackFunction =
+    void Function(
+      bool success,
+      ffi.Pointer<ffi.Uint8> ptr,
+      int len,
+      ffi.Pointer<ffi.Uint8> error_ptr,
+      int error_len,
+    );
+
+/// Callback for bytes result
+typedef BytesCallback = ffi.Pointer<ffi.NativeFunction<BytesCallbackFunction>>;
+typedef UsizeCallbackFunction =
+    ffi.Void Function(
+      ffi.Bool success,
+      ffi.UintPtr value,
+      ffi.Pointer<ffi.Uint8> error_ptr,
+      ffi.UintPtr error_len,
+    );
+typedef DartUsizeCallbackFunction =
+    void Function(
+      bool success,
+      int value,
+      ffi.Pointer<ffi.Uint8> error_ptr,
+      int error_len,
+    );
+
+/// Callback for usize result (used for pointers/handles)
+typedef UsizeCallback = ffi.Pointer<ffi.NativeFunction<UsizeCallbackFunction>>;
+typedef VoidCallbackFunction =
+    ffi.Void Function(
+      ffi.Bool success,
+      ffi.Pointer<ffi.Uint8> error_ptr,
+      ffi.UintPtr error_len,
+    );
+typedef DartVoidCallbackFunction =
+    void Function(
+      bool success,
+      ffi.Pointer<ffi.Uint8> error_ptr,
+      int error_len,
+    );
+
+/// Callback for void result
+typedef VoidCallback = ffi.Pointer<ffi.NativeFunction<VoidCallbackFunction>>;
+
+/// FFI endpoint configuration (for C API)
+///
+/// # Field Descriptions
+///
+/// - `mode`: Endpoint operation mode, determines what operations the endpoint can perform
+/// - `bind_ip`: Local IP address (network byte order), 0 means bind to all interfaces
+/// - `bind_port`: Local port number (host byte order), 0 means system auto-assign
+///
+/// # C Language Usage Example
+///
+/// ```c
+/// QuicFfiEndpointConfig config = {
+/// .mode = QuicEndpointMode_ClientOnly,
+/// .bind_ip = 0,      // INADDR_ANY
+/// .bind_port = 0,    // System-assigned port
+/// };
+///
+/// QuicEndpoint* endpoint = quic_endpoint_create(&config);
+/// ```
+final class QuicFfiEndpointConfig extends ffi.Struct {
+  /// Endpoint operation mode
+  @QuicEndpointMode$1()
+  external int mode;
+
+  /// Local bind IP (network byte order, 0 means INADDR_ANY)
+  @ffi.Uint32()
+  external int bind_ip;
+
+  /// Local bind port (host byte order, 0 means system-assigned)
+  @ffi.Uint16()
+  external int bind_port;
+}
+
+/// FFI-friendly client configuration
+///
+/// Unified configuration for all client initialization options, including:
+/// - Trust mode: skip verification, system root certificates, custom CA
+/// - Client certificate (mTLS): none, DER memory, PEM file, DER file
+/// - Transport configuration
+/// - Bind address
+///
+/// # C Language Usage Examples
+///
+/// ```c
+/// // Use system root certificates
+/// QuicFfiClientConfig config = {
+/// .trust_mode = QuicFfiTrustMode_SystemRoots,
+/// .bind_addr = "0.0.0.0:0",
+/// .transport_config = &transport,  // Optional
+/// };
+///
+/// // Skip verification (testing)
+/// QuicFfiClientConfig config = {
+/// .trust_mode = QuicFfiTrustMode_SkipVerification,
+/// };
+///
+/// // Use custom CA (DER in memory)
+/// QuicFfiClientConfig config = {
+/// .trust_mode = QuicFfiTrustMode_CustomCaDer,
+/// .ca_cert_data = ca_der_bytes,
+/// .ca_cert_len = ca_der_len,
+/// };
+///
+/// // Use custom CA (PEM file)
+/// QuicFfiClientConfig config = {
+/// .trust_mode = QuicFfiTrustMode_CustomCaPemFile,
+/// .ca_cert_path = "/path/to/ca.pem",
+/// };
+///
+/// // With client certificate (mTLS, PEM file)
+/// QuicFfiClientConfig config = {
+/// .trust_mode = QuicFfiTrustMode_SystemRoots,
+/// .client_cert_mode = QuicFfiClientCertMode_PemFile,
+/// .client_cert_path = "/path/to/client.pem",
+/// .client_key_path = "/path/to/client.key",
+/// };
+/// ```
+final class QuicFfiClientConfig extends ffi.Struct {
+  /// Trust mode
+  @QuicFfiTrustMode$1()
+  external int trust_mode;
+
+  /// CA certificate data (for CustomCaDer mode)
+  external ffi.Pointer<ffi.Uint8> ca_cert_data;
+
+  /// CA certificate data length (bytes)
+  @ffi.Uint32()
+  external int ca_cert_len;
+
+  /// CA certificate/file path (for CustomCaPemFile/CustomCaDerFile modes)
+  /// UTF-8 encoded C string
+  external ffi.Pointer<ffi.Char> ca_cert_path;
+
+  /// Client certificate mode
+  @QuicFfiClientCertMode$1()
+  external int client_cert_mode;
+
+  /// Client certificate data (for Der mode)
+  external ffi.Pointer<ffi.Uint8> client_cert_data;
+
+  /// Client certificate data length (bytes)
+  @ffi.Uint32()
+  external int client_cert_len;
+
+  /// Client private key data (for Der mode)
+  external ffi.Pointer<ffi.Uint8> client_key_data;
+
+  /// Client private key data length (bytes)
+  @ffi.Uint32()
+  external int client_key_len;
+
+  /// Client certificate file path (for PemFile/DerFile modes)
+  external ffi.Pointer<ffi.Char> client_cert_path;
+
+  /// Client private key file path (for PemFile/DerFile modes)
+  external ffi.Pointer<ffi.Char> client_key_path;
+
+  /// Transport configuration (optional, NULL uses default)
+  external ffi.Pointer<QuicFfiTransportConfig> transport_config;
+
+  /// Local bind address (optional, NULL or empty string uses "0.0.0.0:0")
+  external ffi.Pointer<ffi.Char> bind_addr;
+}
+
+/// FFI server configuration (for C API)
+///
+/// # C Language Usage Example
+///
+/// ```c
+/// QuicFfiServerConfig config = {
+/// .cert_mode = 2,  // Self-signed certificate
+/// // ... other fields
+/// };
+/// ```
+final class QuicFfiServerConfig extends ffi.Struct {
+  /// Certificate mode: 0 = file, 1 = memory, 2 = self-signed
+  @ffi.Uint32()
+  external int cert_mode;
+
+  /// Certificate file path (used when cert_mode = 0)
+  external ffi.Pointer<ffi.Char> cert_path_ptr;
+
+  /// Private key file path (used when cert_mode = 0)
+  external ffi.Pointer<ffi.Char> key_path_ptr;
+
+  /// Certificate DER data (used when cert_mode = 1)
+  external ffi.Pointer<ffi.Uint8> cert_der_ptr;
+
+  /// Certificate DER data length (bytes)
+  @ffi.Uint32()
+  external int cert_der_len;
+
+  /// Private key DER data (used when cert_mode = 1)
+  external ffi.Pointer<ffi.Uint8> key_der_ptr;
+
+  /// Private key DER data length (bytes)
+  @ffi.Uint32()
+  external int key_der_len;
+
+  /// Self-signed SAN list (used when cert_mode = 2)
+  external ffi.Pointer<ffi.Pointer<ffi.Char>> san_ptr;
+
+  /// SAN list count
+  @ffi.Uint32()
+  external int san_count;
+
+  /// Client authentication mode: 0 = not required, 1 = required, 2 = optional
+  @ffi.Uint32()
+  external int client_auth_mode;
+
+  /// Client CA certificate DER (used when client_auth_mode > 0)
+  external ffi.Pointer<ffi.Uint8> client_ca_ptr;
+
+  /// Client CA certificate DER length (bytes)
+  @ffi.Uint32()
+  external int client_ca_len;
+
+  /// Transport configuration
+  external QuicFfiTransportConfig transport;
+}
+
+/// Connection handle (for C API)
+///
+/// FFI-friendly structure that wraps a QuicConnection pointer along with
+/// commonly used connection information. This allows the Dart layer to
+/// directly access connection info without additional FFI calls.
+///
+/// # Memory Management
+/// - `connection`: Owned pointer, must be freed via `dart_quic_connection_handle_free`
+/// - `remote_addr`: Owned string pointer, freed together with handle
+///
+/// # C API Usage
+/// ```c
+/// QuicConnectionHandle* handle = ...;
+/// printf("Connected to: %.*s\n", (int)handle->remote_addr_len, handle->remote_addr);
+/// // Use handle->connection for stream operations
+/// dart_quic_connection_handle_free(handle);
+/// ```
+final class QuicConnectionHandle extends ffi.Struct {
+  /// Connection pointer (for subsequent operations)
+  external ffi.Pointer<QuicConnection> connection;
+
+  /// Connection stable ID (unique identifier)
+  @ffi.Uint64()
+  external int stable_id;
+
+  /// Remote address string (IP:Port format, allocated memory)
+  external ffi.Pointer<ffi.Uint8> remote_addr;
+
+  /// Remote address string length
+  @ffi.Uint32()
+  external int remote_addr_len;
+}
 
 const int _VCRT_COMPILER_PREPROCESSOR = 1;
 
@@ -783,7 +2517,3 @@ const int _MAX_FNAME = 256;
 const int _MAX_EXT = 256;
 
 const int _MAX_ENV = 32767;
-
-const int PROTOCOL_VERSION = 1;
-
-const int PROTOCOL_MAGIC = 3669818881;

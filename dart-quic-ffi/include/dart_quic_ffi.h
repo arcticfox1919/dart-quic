@@ -29,7 +29,7 @@
  * };
  * ```
  */
-typedef enum QuicEndpointMode {
+enum QuicEndpointMode {
   /**
    * Client-only mode
    *
@@ -60,12 +60,13 @@ typedef enum QuicEndpointMode {
    *   - NAT traversal scenarios
    */
   Bidirectional = 2,
-} QuicEndpointMode;
+};
+typedef uint8_t QuicEndpointMode;
 
 /**
  * Client certificate mode (mTLS)
  */
-typedef enum QuicFfiClientCertMode {
+enum QuicFfiClientCertMode {
   /**
    * No client certificate
    */
@@ -82,12 +83,13 @@ typedef enum QuicFfiClientCertMode {
    * Load from DER file
    */
   DerFile = 3,
-} QuicFfiClientCertMode;
+};
+typedef uint8_t QuicFfiClientCertMode;
 
 /**
  * Trust mode
  */
-typedef enum QuicFfiTrustMode {
+enum QuicFfiTrustMode {
   /**
    * Skip verification (testing only! dangerous!)
    */
@@ -108,7 +110,8 @@ typedef enum QuicFfiTrustMode {
    * Use custom CA (DER file)
    */
   CustomCaDerFile = 4,
-} QuicFfiTrustMode;
+};
+typedef uint8_t QuicFfiTrustMode;
 
 typedef struct MemoryStats MemoryStats;
 
@@ -246,18 +249,39 @@ typedef struct QuicFfiTransportConfig {
 } QuicFfiTransportConfig;
 
 /**
+ * Unified stream handle with metadata
+ *
+ * FFI-friendly structure wrapping a stream pointer, its ID, and type.
+ * The stream pointer can be either `SendStream*` or `RecvStream*` depending on `stream_type`.
+ */
+typedef struct QuicFfiStreamHandle {
+  /**
+   * Stream pointer (cast to void* for FFI, actual type depends on stream_type)
+   */
+  void *stream;
+  /**
+   * Stream ID
+   */
+  uint64_t stream_id;
+  /**
+   * Stream type (0 = Recv, 1 = Send)
+   */
+  uint8_t stream_type;
+} QuicFfiStreamHandle;
+
+/**
  * C-compatible structure for stream pair
- * Contains both send and recv stream pointers (one or both may be null)
+ * Contains both send and recv stream handles (one or both may be null)
  */
 typedef struct QuicFfiStreamPair {
   /**
-   * Send stream pointer (null if not applicable)
+   * Send stream handle (null if not applicable)
    */
-  SendStream *send_stream;
+  struct QuicFfiStreamHandle *send_handle;
   /**
-   * Recv stream pointer (null if not applicable)
+   * Recv stream handle (null if not applicable)
    */
-  RecvStream *recv_stream;
+  struct QuicFfiStreamHandle *recv_handle;
 } QuicFfiStreamPair;
 
 /**
@@ -307,7 +331,7 @@ typedef struct QuicFfiEndpointConfig {
   /**
    * Endpoint operation mode
    */
-  enum QuicEndpointMode mode;
+  QuicEndpointMode mode;
   /**
    * Local bind IP (network byte order, 0 means INADDR_ANY)
    */
@@ -368,7 +392,7 @@ typedef struct QuicFfiClientConfig {
   /**
    * Trust mode
    */
-  enum QuicFfiTrustMode trust_mode;
+  QuicFfiTrustMode trust_mode;
   /**
    * CA certificate data (for CustomCaDer mode)
    */
@@ -385,7 +409,7 @@ typedef struct QuicFfiClientConfig {
   /**
    * Client certificate mode
    */
-  enum QuicFfiClientCertMode client_cert_mode;
+  QuicFfiClientCertMode client_cert_mode;
   /**
    * Client certificate data (for Der mode)
    */
@@ -419,6 +443,73 @@ typedef struct QuicFfiClientConfig {
    */
   const char *bind_addr;
 } QuicFfiClientConfig;
+
+/**
+ * FFI server configuration (for C API)
+ *
+ * # C Language Usage Example
+ *
+ * ```c
+ * QuicFfiServerConfig config = {
+ *     .cert_mode = 2,  // Self-signed certificate
+ *     // ... other fields
+ * };
+ * ```
+ */
+typedef struct QuicFfiServerConfig {
+  /**
+   * Certificate mode: 0 = file, 1 = memory, 2 = self-signed
+   */
+  uint32_t cert_mode;
+  /**
+   * Certificate file path (used when cert_mode = 0)
+   */
+  const char *cert_path_ptr;
+  /**
+   * Private key file path (used when cert_mode = 0)
+   */
+  const char *key_path_ptr;
+  /**
+   * Certificate DER data (used when cert_mode = 1)
+   */
+  const uint8_t *cert_der_ptr;
+  /**
+   * Certificate DER data length (bytes)
+   */
+  uint32_t cert_der_len;
+  /**
+   * Private key DER data (used when cert_mode = 1)
+   */
+  const uint8_t *key_der_ptr;
+  /**
+   * Private key DER data length (bytes)
+   */
+  uint32_t key_der_len;
+  /**
+   * Self-signed SAN list (used when cert_mode = 2)
+   */
+  const char *const *san_ptr;
+  /**
+   * SAN list count
+   */
+  uint32_t san_count;
+  /**
+   * Client authentication mode: 0 = not required, 1 = required, 2 = optional
+   */
+  uint32_t client_auth_mode;
+  /**
+   * Client CA certificate DER (used when client_auth_mode > 0)
+   */
+  const uint8_t *client_ca_ptr;
+  /**
+   * Client CA certificate DER length (bytes)
+   */
+  uint32_t client_ca_len;
+  /**
+   * Transport configuration
+   */
+  struct QuicFfiTransportConfig transport;
+} QuicFfiServerConfig;
 
 /**
  * Connection handle (for C API)
@@ -504,14 +595,9 @@ void dart_quic_transport_config_free(struct QuicFfiTransportConfig *config);
 void dart_quic_stream_pair_free(struct QuicFfiStreamPair *pair);
 
 /**
- * Free send stream
+ * Free stream handle (works for both send and recv streams)
  */
-void dart_quic_send_stream_free(SendStream *stream);
-
-/**
- * Free recv stream
- */
-void dart_quic_recv_stream_free(RecvStream *stream);
+void dart_quic_stream_handle_free(struct QuicFfiStreamHandle *handle);
 
 /**
  * Read data contiguously from the stream
@@ -530,7 +616,7 @@ void dart_quic_recv_stream_free(RecvStream *stream);
  *
  * # Parameters
  * - `executor`: QuicExecutor for async execution
- * - `stream`: Recv stream pointer
+ * - `handle`: Stream handle (must be of type Recv)
  * - `max_len`: Maximum bytes to read (will allocate this much memory)
  * - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
  *   - On success: callback(true, buf, bytes_read, null, 0) where bytes_read <= max_len
@@ -538,7 +624,7 @@ void dart_quic_recv_stream_free(RecvStream *stream);
  *   - On error: callback(false, null, 0, error_ptr, error_len)
  */
 void dart_quic_recv_stream_read(struct QuicExecutor *executor,
-                                RecvStream *stream,
+                                struct QuicFfiStreamHandle *handle,
                                 uintptr_t max_len,
                                 BytesCallback callback);
 
@@ -553,14 +639,14 @@ void dart_quic_recv_stream_read(struct QuicExecutor *executor,
  *
  * # Parameters
  * - `executor`: QuicExecutor for async execution
- * - `stream`: Recv stream pointer
+ * - `handle`: Stream handle (must be of type Recv)
  * - `exact_len`: Exact number of bytes to read
  * - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
  *   - On success: callback(true, buf, exact_len, null, 0)
  *   - On error: callback(false, null, 0, error_ptr, error_len)
  */
 void dart_quic_recv_stream_read_exact(struct QuicExecutor *executor,
-                                      RecvStream *stream,
+                                      struct QuicFfiStreamHandle *handle,
                                       uintptr_t exact_len,
                                       BytesCallback callback);
 
@@ -571,14 +657,14 @@ void dart_quic_recv_stream_read_exact(struct QuicExecutor *executor,
  *
  * # Parameters
  * - `executor`: QuicExecutor for async execution
- * - `stream`: Recv stream pointer
+ * - `handle`: Stream handle (must be of type Recv)
  * - `size_limit`: Maximum bytes to read (prevents memory exhaustion)
  * - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
  *   - On success: callback(true, buf, total_bytes, null, 0)
  *   - On error: callback(false, null, 0, error_ptr, error_len)
  */
 void dart_quic_recv_stream_read_to_end(struct QuicExecutor *executor,
-                                       RecvStream *stream,
+                                       struct QuicFfiStreamHandle *handle,
                                        uintptr_t size_limit,
                                        BytesCallback callback);
 
@@ -590,7 +676,7 @@ void dart_quic_recv_stream_read_to_end(struct QuicExecutor *executor,
  *
  * # Parameters
  * - `executor`: QuicExecutor for async execution
- * - `stream`: Send stream pointer
+ * - `handle`: Stream handle (must be of type Send)
  * - `data`: Data to write
  * - `data_len`: Data length
  * - `callback`: Called with (success, bytes_written, error_ptr, error_len)
@@ -598,7 +684,7 @@ void dart_quic_recv_stream_read_to_end(struct QuicExecutor *executor,
  *   - On error: callback(false, 0, error_ptr, error_len)
  */
 void dart_quic_send_stream_write(struct QuicExecutor *executor,
-                                 SendStream *stream,
+                                 struct QuicFfiStreamHandle *handle,
                                  const uint8_t *data,
                                  uintptr_t data_len,
                                  UsizeCallback callback);
@@ -610,7 +696,7 @@ void dart_quic_send_stream_write(struct QuicExecutor *executor,
  *
  * # Parameters
  * - `executor`: QuicExecutor for async execution
- * - `stream`: Send stream pointer
+ * - `handle`: Stream handle (must be of type Send)
  * - `data`: Data to write
  * - `data_len`: Data length
  * - `callback`: Called with (success, error_ptr, error_len)
@@ -618,7 +704,7 @@ void dart_quic_send_stream_write(struct QuicExecutor *executor,
  *   - On error: callback(false, error_ptr, error_len)
  */
 void dart_quic_send_stream_write_all(struct QuicExecutor *executor,
-                                     SendStream *stream,
+                                     struct QuicFfiStreamHandle *handle,
                                      const uint8_t *data,
                                      uintptr_t data_len,
                                      VoidCallback callback);
@@ -629,41 +715,13 @@ void dart_quic_send_stream_write_all(struct QuicExecutor *executor,
  * It is an error to write to a stream after finishing it.
  *
  * # Parameters
- * - `stream`: Send stream pointer
+ * - `handle`: Stream handle (must be of type Send)
  *
  * # Returns
  * - 0 (Success) on success
  * - Error code on failure
  */
-int32_t dart_quic_send_stream_finish(SendStream *stream);
-
-/**
- * Get the identity of a send stream
- *
- * Returns the stream ID index as a u64 value.
- *
- * # Parameters
- * - `stream`: Send stream pointer
- *
- * # Returns
- * - Stream ID index on success
- * - 0 if stream pointer is null
- */
-uint64_t dart_quic_send_stream_id(SendStream *stream);
-
-/**
- * Get the identity of a recv stream
- *
- * Returns the stream ID index as a u64 value.
- *
- * # Parameters
- * - `stream`: Recv stream pointer
- *
- * # Returns
- * - Stream ID index on success
- * - 0 if stream pointer is null
- */
-uint64_t dart_quic_recv_stream_id(RecvStream *stream);
+int32_t dart_quic_send_stream_finish(struct QuicFfiStreamHandle *handle);
 
 /**
  * Create a QUIC endpoint with specified configuration
@@ -686,10 +744,31 @@ uint64_t dart_quic_recv_stream_id(RecvStream *stream);
  * # Safety
  * - config and result must be valid pointers
  * - client_config/server_config must be valid or null based on mode
+ * Create a QUIC endpoint
+ *
+ * # Parameters
+ * - `config`: Endpoint configuration (mode and bind address)
+ * - `client`: QuicClient pointer (nullable, required for Client/Bidirectional modes, will be consumed)
+ * - `server`: QuicServer pointer (nullable, required for Server/Bidirectional modes, will be consumed)
+ * - `result`: Result output structure
+ *
+ * # Returns
+ * - 0 on success (result.data contains endpoint pointer)
+ * - Error code on failure (result.error contains error details)
+ *
+ * # Mode Requirements
+ * - ClientOnly: client required, server must be null
+ * - ServerOnly: server required, client must be null
+ * - Bidirectional: both client and server must be provided
+ *
+ * # Safety
+ * - config and result must be valid pointers
+ * - client/server must be valid or null based on mode
+ * - client/server will be consumed and must not be used after this call
  */
 int32_t dart_quic_endpoint_create(const struct QuicFfiEndpointConfig *config,
-                                  ClientConfig *client_config,
-                                  ServerConfig *server_config,
+                                  const struct QuicFfiClientConfig *client_config,
+                                  const struct QuicFfiServerConfig *server_config,
                                   struct QuicFfiResult *result);
 
 /**
