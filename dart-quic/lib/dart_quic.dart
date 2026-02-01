@@ -4,6 +4,6 @@
 library;
 
 export 'src/protocol/binary_protocol.dart';
-export 'src/core/message_handler.dart';
+export 'src/core/quic_message_processor.dart';
 
 // TODO: Export any additional libraries for clients of this package.

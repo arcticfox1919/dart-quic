@@ -1,146 +1,344 @@
+//! dart-quic-ffi - QUIC FFI bindings for Dart
+//! 
+//! This library provides FFI bindings for QUIC protocol operations.
+//! 
+//! Module organization:
+//! - lib.rs: Common types, executor, memory manager, transport config
+//! - quic_ffi_client.rs: Client, Connection, Stream FFI
+//! - quic_ffi_server.rs: Server FFI
 
 pub mod runtime_manager;
-pub mod async_dart_task_executor;
 pub mod memory_manager;
-pub mod binary_protocol;
-pub mod quic_command_handler;
+pub mod quic_executor;
+pub mod types;
+pub mod error;
+pub mod quic;
+pub mod quic_ffi_stream_result;
+pub mod quic_ffi_endpoint;
+pub mod quic_ffi_client;
+pub mod quic_ffi_server;
 
-pub use async_dart_task_executor::*;
-pub use quic_command_handler::{QuicCommandHandler, QuicCommandType};
+use quic_executor::{QuicExecutor, BoolCallback};
+use error::QuicError;
 pub use memory_manager::{
     allocate, deallocate, memory_stats, MemoryStats,
     initialize_memory_manager, initialize_memory_manager_with_config,
     destroy_memory_manager, is_memory_manager_available, PoolConfig
 };
 
-// Create QUIC-specific type for FFI
-pub type QuicTaskExecutor = AsyncDartTaskExecutor<QuicCommandHandler>;
+// ============================================
+// FFI Generic Result Structure
+// ============================================
 
-// FFI export functions - unified management
-/// Create QUIC task executor
-#[unsafe(no_mangle)]
-pub extern "C" fn dart_quic_executor_new(dart_port: DartPort) -> *mut QuicTaskExecutor {
-    let handler = QuicCommandHandler::new();
-    let executor = AsyncDartTaskExecutor::new(dart_port, handler);
-    Box::into_raw(Box::new(executor))
+/// Generic FFI result structure for C API interop.
+/// Used for sync operations that need to return both a handle and potential error.
+#[repr(C)]
+pub struct QuicFfiResult {
+    pub handle: *mut std::ffi::c_void,
+    pub error_msg: *mut u8,
+    pub error_msg_len: usize,
 }
 
-/// Initialize QUIC executor runtime (async, returns TaskId for event tracking)
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_executor_init_runtime(executor: *mut QuicTaskExecutor, threads: usize) -> TaskId {
-    if executor.is_null() {
-        return 0;
+impl QuicFfiResult {
+    /// Create a success result with handle
+    pub fn success<T>(handle: *mut T) -> Self {
+        Self {
+            handle: handle as *mut std::ffi::c_void,
+            error_msg: std::ptr::null_mut(),
+            error_msg_len: 0,
+        }
     }
-    unsafe {
-        let executor_ref = &*executor;
-        executor_ref.init_runtime(threads)
+    
+    /// Create a null/empty result (no error, no handle)
+    pub fn null() -> Self {
+        Self {
+            handle: std::ptr::null_mut(),
+            error_msg: std::ptr::null_mut(),
+            error_msg_len: 0,
+        }
     }
-}
-
-/// Submit QUIC task
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_executor_submit_params(
-    executor: *mut QuicTaskExecutor,
-    command_type: u8,
-    data_ptr: *mut u8,
-    data_len: usize,
-    params_ptr: *mut u64,
-    params_count: usize,
-) -> TaskId {
-    if executor.is_null() {
-        return 0;
+    
+    /// Create an error result with message
+    pub fn error(err: &QuicError) -> Self {
+        let mut result = Self::null();
+        if let Some(msg) = err.message() {
+            let msg_bytes = msg.as_bytes();
+            let ptr = allocate(msg_bytes.len());
+            if !ptr.is_null() {
+                unsafe {
+                    std::ptr::copy_nonoverlapping(msg_bytes.as_ptr(), ptr, msg_bytes.len());
+                }
+                result.error_msg = ptr;
+                result.error_msg_len = msg_bytes.len();
+            }
+        }
+        result
     }
-    unsafe {
-        let executor_ref = &*executor;
-        executor_ref.submit_task(command_type, data_ptr, data_len, params_ptr, params_count)
+    
+    /// Create an error result from string
+    pub fn error_str(msg: &str) -> Self {
+        let mut result = Self::null();
+        let msg_bytes = msg.as_bytes();
+        let ptr = allocate(msg_bytes.len());
+        if !ptr.is_null() {
+            unsafe {
+                std::ptr::copy_nonoverlapping(msg_bytes.as_ptr(), ptr, msg_bytes.len());
+            }
+            result.error_msg = ptr;
+            result.error_msg_len = msg_bytes.len();
+        }
+        result
     }
-}
-
-/// Check QUIC executor running status
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_executor_is_running(executor: *mut QuicTaskExecutor) -> bool {
-    if executor.is_null() {
-        return false;
+    
+    /// Create result from Result type
+    pub fn from_result<T, E: std::fmt::Display>(result: Result<*mut T, E>) -> Self {
+        match result {
+            Ok(ptr) => Self::success(ptr),
+            Err(e) => Self::error_str(&e.to_string()),
+        }
     }
-    unsafe {
-        let executor_ref = &*executor;
-        executor_ref.is_running()
-    }
-}
-
-/// Release QUIC executor - returns immediately, closes asynchronously
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_executor_free(executor: *mut QuicTaskExecutor) {
-    if !executor.is_null() {
-        unsafe {
-            let executor_box = Box::from_raw(executor);
-            std::thread::spawn(move || {
-                drop(executor_box);
-            });
+    
+    /// Write result from Result<T, QuicError> to self, returns error code
+    /// This method boxes the value and writes the pointer to handle
+    pub fn write_result<T>(&mut self, result: Result<T, QuicError>) -> i32 {
+        match result {
+            Ok(value) => {
+                self.handle = Box::into_raw(Box::new(value)) as *mut std::ffi::c_void;
+                self.error_msg = std::ptr::null_mut();
+                self.error_msg_len = 0;
+                types::QuicResult::Success as i32
+            }
+            Err(e) => {
+                let code = e.code_value();
+                self.handle = std::ptr::null_mut();
+                if let Some(msg) = e.message() {
+                    let msg_bytes = msg.as_bytes();
+                    let ptr = allocate(msg_bytes.len());
+                    if !ptr.is_null() {
+                        unsafe {
+                            std::ptr::copy_nonoverlapping(msg_bytes.as_ptr(), ptr, msg_bytes.len());
+                        }
+                        self.error_msg = ptr;
+                        self.error_msg_len = msg_bytes.len();
+                    }
+                }
+                code
+            }
         }
     }
 }
 
-/// Release QUIC executor - synchronous version (will block)
+/// Free error message allocated by QuicFfiResult
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_executor_free_sync(executor: *mut QuicTaskExecutor) {
-    if !executor.is_null() {
-        unsafe {
-            let _executor_box = Box::from_raw(executor);
+pub unsafe extern "C" fn dart_quic_ffi_result_free_error(result: *mut QuicFfiResult) {
+    if !result.is_null() {
+        let r = unsafe { &mut *result };
+        if !r.error_msg.is_null() && r.error_msg_len > 0 {
+            deallocate(r.error_msg, r.error_msg_len);
+            r.error_msg = std::ptr::null_mut();
+            r.error_msg_len = 0;
         }
     }
 }
 
-/// Allocate native memory
+// ============================================
+// Error Constants (pub for submodules)
+// ============================================
+
+// ============================================
+// Error Constants (pub for submodules)
+// ============================================
+
+// Error message strings - use &str as base type, convert to &[u8] when needed via .as_bytes()
+#[doc(hidden)]
+pub static ERR_EXECUTOR_NULL: &str = "Executor is null";
+#[doc(hidden)]
+pub static ERR_NOT_RUNNING: &str = "Executor not running";
+#[doc(hidden)]
+pub static ERR_PTR_NULL: &str = "Pointer is null";
+#[doc(hidden)]
+pub static ERR_SUBMIT_FAILED: &str = "Failed to submit async task";
+#[doc(hidden)]
+pub static ERR_CONFIG_REQUIRED: &str = "Config is required";
+
+// ============================================
+// FFI Check Macros
+// ============================================
+
+/// Check if executor is null, return early with UsizeCallback error
+#[macro_export]
+macro_rules! check_executor_usize {
+    ($executor:expr, $callback:expr) => {
+        if $executor.is_null() {
+            $callback(false, 0, $crate::ERR_EXECUTOR_NULL.as_bytes().as_ptr(), $crate::ERR_EXECUTOR_NULL.len());
+            return;
+        }
+    };
+}
+
+/// Check if pointer is null, return early with UsizeCallback error
+#[macro_export]
+macro_rules! check_ptr_usize {
+    ($ptr:expr, $callback:expr) => {
+        if $ptr.is_null() {
+            $callback(false, 0, $crate::ERR_PTR_NULL.as_bytes().as_ptr(), $crate::ERR_PTR_NULL.len());
+            return;
+        }
+    };
+}
+
+/// Check if executor is null, return early with VoidCallback error
+#[macro_export]
+macro_rules! check_executor_void {
+    ($executor:expr, $callback:expr) => {
+        if $executor.is_null() {
+            $callback(false, $crate::ERR_EXECUTOR_NULL.as_bytes().as_ptr(), $crate::ERR_EXECUTOR_NULL.len());
+            return;
+        }
+    };
+}
+
+/// Check if pointer is null, return early with VoidCallback error
+#[macro_export]
+macro_rules! check_ptr_void {
+    ($ptr:expr, $callback:expr) => {
+        if $ptr.is_null() {
+            $callback(false, $crate::ERR_PTR_NULL.as_bytes().as_ptr(), $crate::ERR_PTR_NULL.len());
+            return;
+        }
+    };
+}
+
+/// Check if executor is null, return early with BytesCallback error
+#[macro_export]
+macro_rules! check_executor_bytes {
+    ($executor:expr, $callback:expr) => {
+        if $executor.is_null() {
+            $callback(false, std::ptr::null_mut(), 0, $crate::ERR_EXECUTOR_NULL.as_bytes().as_ptr(), $crate::ERR_EXECUTOR_NULL.len());
+            return;
+        }
+    };
+}
+
+/// Check if pointer is null, return early with BytesCallback error
+#[macro_export]
+macro_rules! check_ptr_bytes {
+    ($ptr:expr, $callback:expr) => {
+        if $ptr.is_null() {
+            $callback(false, std::ptr::null_mut(), 0, $crate::ERR_PTR_NULL.as_bytes().as_ptr(), $crate::ERR_PTR_NULL.len());
+            return;
+        }
+    };
+}
+
+/// Check if executor is null, return early with ResultCallback error
+#[macro_export]
+macro_rules! check_executor_result {
+    ($executor:expr, $callback:expr) => {
+        if $executor.is_null() {
+            let mut result = $crate::QuicFfiResult::error_str($crate::ERR_EXECUTOR_NULL);
+            $callback(&mut result as *mut $crate::QuicFfiResult);
+            return;
+        }
+        if !unsafe { (*$executor).is_running() } {
+            let mut result = $crate::QuicFfiResult::error_str($crate::ERR_NOT_RUNNING);
+            $callback(&mut result as *mut $crate::QuicFfiResult);
+            return;
+        }
+    };
+}
+
+/// Check if pointer is null, return early with ResultCallback error
+#[macro_export]
+macro_rules! check_ptr_result {
+    ($ptr:expr, $callback:expr) => {
+        if $ptr.is_null() {
+            let mut result = $crate::QuicFfiResult::error_str($crate::ERR_PTR_NULL);
+            $callback(&mut result as *mut $crate::QuicFfiResult);
+            return;
+        }
+    };
+}
+
+// ============================================
+// Executor FFI
+// ============================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn dart_quic_executor_new() -> *mut QuicExecutor {
+    Box::into_raw(Box::new(QuicExecutor::new()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dart_quic_executor_init(
+    executor: *mut QuicExecutor,
+    threads: usize,
+    callback: BoolCallback,
+) {
+    if executor.is_null() {
+        callback(false, false, ERR_EXECUTOR_NULL.as_ptr(), ERR_EXECUTOR_NULL.len());
+        return;
+    }
+    unsafe { (*executor).init_runtime(threads, callback) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dart_quic_executor_is_running(executor: *mut QuicExecutor) -> bool {
+    if executor.is_null() { return false }
+    unsafe { (*executor).is_running() }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dart_quic_executor_free(executor: *mut QuicExecutor) {
+    if !executor.is_null() {
+        let executor_box = unsafe { Box::from_raw(executor) };
+        executor_box.shutdown();
+        drop(executor_box);
+    }
+}
+
+// ============================================
+// Memory Manager FFI
+// ============================================
+
 #[unsafe(no_mangle)]
 pub extern "C" fn dart_allocate_memory(size: usize) -> *mut u8 {
     allocate(size)
 }
 
-/// Release native allocated memory - requires providing original allocation size
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_free_memory(ptr: *mut u8, size: usize) {
     deallocate(ptr, size);
 }
 
-/// Get memory manager statistics
 #[unsafe(no_mangle)]
 pub extern "C" fn dart_get_memory_stats() -> *const MemoryStats {
-    if let Some(stats) = memory_stats() {
-        let stats_box = Box::new(stats);
-        Box::into_raw(stats_box)
-    } else {
-        std::ptr::null()
+    match memory_stats() {
+        Some(stats) => Box::into_raw(Box::new(stats)),
+        None => std::ptr::null(),
     }
 }
 
-/// Release memory statistics structure
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dart_free_memory_stats(stats: *mut MemoryStats) {
     if !stats.is_null() {
-        unsafe {
-            let _stats_box = Box::from_raw(stats);
-        }
+        unsafe { let _ = Box::from_raw(stats); }
     }
 }
 
-// Singleton memory manager FFI functions
-/// Initialize global memory manager (default configuration)
 #[unsafe(no_mangle)]
 pub extern "C" fn dart_initialize_memory_manager() -> bool {
     initialize_memory_manager()
 }
 
-/// Initialize global memory manager with custom configuration
-/// Parameter -1 means use default value, otherwise use specified value
 #[unsafe(no_mangle)]
 pub extern "C" fn dart_initialize_memory_manager_with_config(
-    tiny_pool_size: i32,     // -1 = default value, otherwise use specified value
-    small_pool_size: i32,    // -1 = default value, otherwise use specified value
-    medium_pool_size: i32,   // -1 = default value, otherwise use specified value
-    large_pool_size: i32,    // -1 = default value, otherwise use specified value
-    huge_pool_size: i32,     // -1 = default value, otherwise use specified value
-    xlarge_pool_size: i32,   // -1 = default value, otherwise use specified value
+    tiny_pool_size: i32,
+    small_pool_size: i32,
+    medium_pool_size: i32,
+    large_pool_size: i32,
+    huge_pool_size: i32,
+    xlarge_pool_size: i32,
 ) -> bool {
     let config = PoolConfig {
         tiny_pool_size: if tiny_pool_size >= 0 { Some(tiny_pool_size as usize) } else { None },
@@ -153,15 +351,32 @@ pub extern "C" fn dart_initialize_memory_manager_with_config(
     initialize_memory_manager_with_config(config)
 }
 
-/// Destroy global memory manager
 #[unsafe(no_mangle)]
 pub extern "C" fn dart_destroy_memory_manager() -> bool {
     destroy_memory_manager()
 }
 
-/// Check if memory manager is available
 #[unsafe(no_mangle)]
 pub extern "C" fn dart_is_memory_manager_available() -> bool {
     is_memory_manager_available()
 }
 
+// ============================================
+// QUIC Transport Config FFI
+// ============================================
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dart_quic_transport_config_default(result: *mut QuicFfiResult) -> i32 {
+    if result.is_null() {
+        return types::QuicResult::InvalidParameter as i32;
+    }
+    
+    unsafe { (*result).write_result(Ok(quic::QuicFfiTransportConfig::default())) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dart_quic_transport_config_free(config: *mut quic::QuicFfiTransportConfig) {
+    if !config.is_null() {
+        unsafe { let _ = Box::from_raw(config); }
+    }
+}

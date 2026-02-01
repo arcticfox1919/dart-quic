@@ -7,7 +7,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
-import 'package:dart_quic/src/core/message_handler.dart';
+import 'package:dart_quic/src/core/quic_message_processor.dart';
 import 'package:dart_quic/src/core/quic_buffer.dart';
 import 'package:dart_quic/src/core/quic_initializer.dart';
 import 'package:dart_quic/src/utils/library_loader.dart';
@@ -27,7 +27,7 @@ Future<void> main() async {
       ),
     );
     QuicInitializer.initialize();
-    var handler = QuicMessageHandler();
+    var handler = QuicMessageProcessor();
     handler.setTaskHandler((resp) {
       if (response.containsKey(resp.taskId)) {
         response[resp.taskId]?.complete(resp.buffer);
@@ -43,7 +43,7 @@ Future<void> main() async {
   }
 }
 
-Future<String> echo(QuicMessageHandler handler, String content) async {
+Future<String> echo(QuicMessageProcessor handler, String content) async {
   return autoRelease((arena) async {
     final id = handler.sendCommand(
       QuicCommandType.echo,
