@@ -1502,6 +1502,132 @@ class QuicFFIBindings {
           UsizeCallback,
         )
       >();
+
+  /// Wait for all server connections to become idle (async)
+  ///
+  /// Blocks asynchronously until all active connections are closed.
+  /// Should typically be called after `dart_quic_server_close` for a graceful shutdown.
+  ///
+  /// # Safety
+  /// All pointers must be valid.
+  void dart_quic_server_wait_idle(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<QuicServer> server,
+    VoidCallback callback,
+  ) {
+    return _dart_quic_server_wait_idle(executor, server, callback);
+  }
+
+  late final _dart_quic_server_wait_idlePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<QuicServer>,
+            VoidCallback,
+          )
+        >
+      >('dart_quic_server_wait_idle');
+  late final _dart_quic_server_wait_idle = _dart_quic_server_wait_idlePtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<QuicServer>,
+          VoidCallback,
+        )
+      >();
+
+  /// Get the number of currently open connections on the server
+  ///
+  /// Returns 0 if the server pointer is null.
+  int dart_quic_server_open_connections(ffi.Pointer<QuicServer> server) {
+    return _dart_quic_server_open_connections(server);
+  }
+
+  late final _dart_quic_server_open_connectionsPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.UintPtr Function(ffi.Pointer<QuicServer>)>
+      >('dart_quic_server_open_connections');
+  late final _dart_quic_server_open_connections =
+      _dart_quic_server_open_connectionsPtr
+          .asFunction<int Function(ffi.Pointer<QuicServer>)>();
+
+  /// Get server local port
+  ///
+  /// Returns 0 if the server pointer is null.
+  int dart_quic_server_local_port(ffi.Pointer<QuicServer> server) {
+    return _dart_quic_server_local_port(server);
+  }
+
+  late final _dart_quic_server_local_portPtr =
+      _lookup<ffi.NativeFunction<ffi.Uint16 Function(ffi.Pointer<QuicServer>)>>(
+        'dart_quic_server_local_port',
+      );
+  late final _dart_quic_server_local_port = _dart_quic_server_local_portPtr
+      .asFunction<int Function(ffi.Pointer<QuicServer>)>();
+
+  /// Create a QUIC server asynchronously using unified FFI configuration
+  ///
+  /// Must be called after `dart_quic_executor_init` because Quinn requires
+  /// an active tokio runtime context when creating the endpoint.
+  ///
+  /// On success, the callback receives a `QuicServerHandle*` pointer (as usize).
+  /// The handle is allocated and owned by Rust; free it with `dart_quic_server_handle_free`.
+  ///
+  /// # Safety
+  /// - `config` and all data it references must remain valid until the callback fires
+  ///
+  /// # Parameters
+  /// - `executor`: Running QuicExecutor (must not be null)
+  /// - `bind_addr`: Address to bind, e.g. "0.0.0.0:4433"
+  /// - `config`: Pointer to FFI server configuration (must not be null)
+  /// - `callback`: UsizeCallback receiving QuicServerHandle* pointer on success
+  int dart_quic_server_new_async(
+    ffi.Pointer<QuicExecutor> executor,
+    ffi.Pointer<ffi.Char> bind_addr,
+    ffi.Pointer<QuicFfiServerConfig> config,
+    UsizeCallback callback,
+  ) {
+    return _dart_quic_server_new_async(executor, bind_addr, config, callback);
+  }
+
+  late final _dart_quic_server_new_asyncPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<QuicExecutor>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<QuicFfiServerConfig>,
+            UsizeCallback,
+          )
+        >
+      >('dart_quic_server_new_async');
+  late final _dart_quic_server_new_async = _dart_quic_server_new_asyncPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<QuicExecutor>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<QuicFfiServerConfig>,
+          UsizeCallback,
+        )
+      >();
+
+  /// Free server handle and all its resources
+  ///
+  /// This frees:
+  /// - The server itself
+  /// - The local_addr_ptr string
+  /// - The handle structure
+  void dart_quic_server_handle_free(ffi.Pointer<QuicServerHandle> handle) {
+    return _dart_quic_server_handle_free(handle);
+  }
+
+  late final _dart_quic_server_handle_freePtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<QuicServerHandle>)>
+      >('dart_quic_server_handle_free');
+  late final _dart_quic_server_handle_free = _dart_quic_server_handle_freePtr
+      .asFunction<void Function(ffi.Pointer<QuicServerHandle>)>();
 }
 
 typedef va_list = ffi.Pointer<ffi.Char>;
@@ -2168,8 +2294,8 @@ final class QuicFfiServerConfig extends ffi.Struct {
   @ffi.Uint32()
   external int client_ca_len;
 
-  /// Transport configuration
-  external QuicFfiTransportConfig transport;
+  /// Transport configuration (optional, null uses default)
+  external ffi.Pointer<QuicFfiTransportConfig> transport;
 }
 
 /// Connection handle (for C API)
@@ -2203,6 +2329,41 @@ final class QuicConnectionHandle extends ffi.Struct {
   /// Remote address string length
   @ffi.Uint32()
   external int remote_addr_len;
+}
+
+/// FFI server handle
+///
+/// FFI-friendly structure that wraps a QuicServer pointer along with
+/// commonly used server information. This allows the Dart layer to
+/// directly access server info without additional FFI calls.
+///
+/// # Memory Management
+/// - Allocated and owned entirely by Rust via `Box::into_raw`
+/// - `server`: owned QuicServer pointer
+/// - `local_addr_ptr`: owned string pointer, allocated via `crate::allocate`
+/// - Free the entire handle with `dart_quic_server_handle_free`
+///
+/// # C API Usage
+/// ```c
+/// QuicServerHandle* handle = ...;
+/// printf("Listening on: %.*s\n", (int)handle->local_addr_len, handle->local_addr_ptr);
+/// // Use handle->server for server operations
+/// dart_quic_server_handle_free(handle);
+/// ```
+final class QuicServerHandle extends ffi.Struct {
+  /// Server pointer (pass to all subsequent server operations)
+  external ffi.Pointer<QuicServer> server;
+
+  /// Local bind port
+  @ffi.Uint16()
+  external int local_port;
+
+  /// Local address string length
+  @ffi.Uint32()
+  external int local_addr_len;
+
+  /// Local address string (IP:Port format, allocated memory)
+  external ffi.Pointer<ffi.Uint8> local_addr_ptr;
 }
 
 const int _VCRT_COMPILER_PREPROCESSOR = 1;

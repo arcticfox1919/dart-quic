@@ -282,7 +282,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read(
             Err(e) => {
                 // Error occurred, deallocate unused memory
                 crate::deallocate(ptr_addr as *mut u8, max_len);
-                let err = format!("{}", e);
+                let err = crate::FfiErrBuf::new(format!("{}", e));
                 (callback.0)(false, std::ptr::null_mut(), 0, err.as_ptr(), err.len());
             }
         }
@@ -351,7 +351,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read_exact(
             Err(e) => {
                 // Error occurred, deallocate
                 crate::deallocate(ptr_addr as *mut u8, exact_len);
-                let err = format!("{}", e);
+                let err = crate::FfiErrBuf::new(format!("{}", e));
                 (callback.0)(false, std::ptr::null_mut(), 0, err.as_ptr(), err.len());
             }
         }
@@ -406,7 +406,7 @@ pub unsafe extern "C" fn dart_quic_recv_stream_read_to_end(
                 }
             }
             Err(e) => {
-                let err = format!("{}", e);
+                let err = crate::FfiErrBuf::new(format!("{}", e));
                 (callback.0)(false, std::ptr::null_mut(), 0, err.as_ptr(), err.len());
             }
         }
@@ -466,7 +466,7 @@ pub unsafe extern "C" fn dart_quic_send_stream_write(
                 (callback.0)(true, n, std::ptr::null(), 0);
             }
             Err(e) => {
-                let err = format!("{}", e);
+                let err = crate::FfiErrBuf::new(format!("{}", e));
                 (callback.0)(false, 0, err.as_ptr(), err.len());
             }
         }
@@ -521,7 +521,7 @@ pub unsafe extern "C" fn dart_quic_send_stream_write_all(
                 (callback.0)(true, std::ptr::null(), 0);
             }
             Err(e) => {
-                let err = format!("{}", e);
+                let err = crate::FfiErrBuf::new(format!("{}", e));
                 (callback.0)(false, err.as_ptr(), err.len());
             }
         }

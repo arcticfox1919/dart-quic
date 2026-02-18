@@ -28,9 +28,8 @@ Future<void> main() async {
   // Step 1: Configure custom library loader (optional)
   // This is useful when the DLL is not in the default location
   LibraryLoader.setCustomLoader(
-    () => DynamicLibrary.open(
-      r'G:\Repository\git_code\dart\dart-quic\dist\windows-x86_64\release\dart_quic_ffi.dll',
-    ),
+    () =>
+        DynamicLibrary.open('../dist/windows-x86_64/release/dart_quic_ffi.dll'),
   );
 
   // Step 2: Initialize the QUIC library
@@ -58,8 +57,8 @@ Future<void> main() async {
     // Step 5: Connect to the QUIC server
     print('[..] Connecting to $serverAddress...');
     connection = await client.connect(
-      SocketAddress.parse(serverAddress),
-      serverName,
+      serverAddr: SocketAddress.parse(serverAddress),
+      serverName: serverName,
     );
     print('[OK] Connected to server');
     print('    Remote address: ${connection.remoteAddr}');

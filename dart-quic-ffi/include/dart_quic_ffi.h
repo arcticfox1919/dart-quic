@@ -506,9 +506,9 @@ typedef struct QuicFfiServerConfig {
    */
   uint32_t client_ca_len;
   /**
-   * Transport configuration
+   * Transport configuration (optional, null uses default)
    */
-  struct QuicFfiTransportConfig transport;
+  const struct QuicFfiTransportConfig *transport;
 } QuicFfiServerConfig;
 
 /**
@@ -548,6 +548,46 @@ typedef struct QuicConnectionHandle {
    */
   uint32_t remote_addr_len;
 } QuicConnectionHandle;
+
+/**
+ * FFI server handle
+ *
+ * FFI-friendly structure that wraps a QuicServer pointer along with
+ * commonly used server information. This allows the Dart layer to
+ * directly access server info without additional FFI calls.
+ *
+ * # Memory Management
+ * - Allocated and owned entirely by Rust via `Box::into_raw`
+ * - `server`: owned QuicServer pointer
+ * - `local_addr_ptr`: owned string pointer, allocated via `crate::allocate`
+ * - Free the entire handle with `dart_quic_server_handle_free`
+ *
+ * # C API Usage
+ * ```c
+ * QuicServerHandle* handle = ...;
+ * printf("Listening on: %.*s\n", (int)handle->local_addr_len, handle->local_addr_ptr);
+ * // Use handle->server for server operations
+ * dart_quic_server_handle_free(handle);
+ * ```
+ */
+typedef struct QuicServerHandle {
+  /**
+   * Server pointer (pass to all subsequent server operations)
+   */
+  struct QuicServer *server;
+  /**
+   * Local bind port
+   */
+  uint16_t local_port;
+  /**
+   * Local address string length
+   */
+  uint32_t local_addr_len;
+  /**
+   * Local address string (IP:Port format, allocated memory)
+   */
+  uint8_t *local_addr_ptr;
+} QuicServerHandle;
 
 /**
  * Free error message allocated by QuicFfiResult
@@ -1112,5 +1152,66 @@ bool dart_quic_server_local_addr(struct QuicServer *server, uint8_t **addr_out, 
 void dart_quic_server_accept(struct QuicExecutor *executor,
                              struct QuicServer *server,
                              UsizeCallback callback);
+
+/**
+ * Wait for all server connections to become idle (async)
+ *
+ * Blocks asynchronously until all active connections are closed.
+ * Should typically be called after `dart_quic_server_close` for a graceful shutdown.
+ *
+ * # Safety
+ * All pointers must be valid.
+ */
+void dart_quic_server_wait_idle(struct QuicExecutor *executor,
+                                struct QuicServer *server,
+                                VoidCallback callback);
+
+/**
+ * Get the number of currently open connections on the server
+ *
+ * Returns 0 if the server pointer is null.
+ */
+uintptr_t dart_quic_server_open_connections(struct QuicServer *server);
+
+/**
+ * Get server local port
+ *
+ * Returns 0 if the server pointer is null.
+ */
+uint16_t dart_quic_server_local_port(struct QuicServer *server);
+
+/**
+ * Create a QUIC server asynchronously using unified FFI configuration
+ *
+ * Must be called after `dart_quic_executor_init` because Quinn requires
+ * an active tokio runtime context when creating the endpoint.
+ *
+ * On success, the callback receives a `QuicServerHandle*` pointer (as usize).
+ * The handle is allocated and owned by Rust; free it with `dart_quic_server_handle_free`.
+ *
+ * # Safety
+ * - `config` and all data it references must remain valid until the callback fires
+ *
+ * # Parameters
+ * - `executor`: Running QuicExecutor (must not be null)
+ * - `bind_addr`: Address to bind, e.g. "0.0.0.0:4433"
+ * - `config`: Pointer to FFI server configuration (must not be null)
+ * - `callback`: UsizeCallback receiving QuicServerHandle* pointer on success
+ */
+int32_t dart_quic_server_new_async(struct QuicExecutor *executor,
+                                   const char *bind_addr,
+                                   const struct QuicFfiServerConfig *config,
+                                   UsizeCallback callback);
+
+/**
+ * Free server handle and all its resources
+ *
+ * This frees:
+ * - The server itself
+ * - The local_addr_ptr string
+ * - The handle structure
+ *
+ */
+void dart_quic_server_handle_free(struct QuicServerHandle *handle);
 
 #endif  /* DART_QUIC_FFI_H */

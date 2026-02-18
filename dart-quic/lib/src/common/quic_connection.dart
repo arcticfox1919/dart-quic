@@ -179,6 +179,170 @@ class QuicConn {
     return completer.future;
   }
 
+  /// Accept an incoming bidirectional stream from the remote peer.
+  ///
+  /// Returns a [Future] that completes with a [QuicStream] on success.
+  /// The stream supports both reading and writing ([canRead] and [canWrite] are true).
+  ///
+  /// Throws [StateError] if the connection is disposed or accept fails.
+  Future<QuicStream> acceptBiStream() async {
+    _checkDisposed();
+
+    final completer = Completer<QuicStream>();
+    late final ffi.NativeCallable<UsizeCallbackFunction> nativeCallback;
+
+    void onResult(
+      bool success,
+      int value,
+      ffi.Pointer<ffi.Uint8> errorPtr,
+      int errorLen,
+    ) {
+      if (success) {
+        final pairPtr = ffi.Pointer<QuicFfiStreamPair>.fromAddress(value);
+        try {
+          final stream = QuicStream.fromPair(_bindings, _executorPtr!, pairPtr);
+          completer.complete(stream);
+        } catch (e) {
+          completer.completeError(
+            StateError('Failed to create accepted bidirectional stream: $e'),
+          );
+        }
+      } else {
+        completer.completeError(
+          StateError(
+            'Failed to accept bidirectional stream: ${errorPtr.cast<Utf8>().toDartString(length: errorLen)}',
+          ),
+        );
+      }
+      nativeCallback.close();
+    }
+
+    nativeCallback = ffi.NativeCallable<UsizeCallbackFunction>.listener(
+      onResult,
+    );
+
+    _bindings.dart_quic_connection_accept_bi(
+      _executorPtr!,
+      _handlePtr!,
+      nativeCallback.nativeFunction,
+    );
+
+    return completer.future;
+  }
+
+  /// Accept an incoming unidirectional stream from the remote peer (receive only).
+  ///
+  /// Returns a [Future] that completes with a [QuicStream] on success.
+  /// The stream only supports reading ([canRead] is true, [canWrite] is false).
+  ///
+  /// Throws [StateError] if the connection is disposed or accept fails.
+  Future<QuicStream> acceptUniStream() async {
+    _checkDisposed();
+
+    final completer = Completer<QuicStream>();
+    late final ffi.NativeCallable<UsizeCallbackFunction> nativeCallback;
+
+    void onResult(
+      bool success,
+      int value,
+      ffi.Pointer<ffi.Uint8> errorPtr,
+      int errorLen,
+    ) {
+      if (success) {
+        final pairPtr = ffi.Pointer<QuicFfiStreamPair>.fromAddress(value);
+        try {
+          final stream = QuicStream.fromPair(_bindings, _executorPtr!, pairPtr);
+          completer.complete(stream);
+        } catch (e) {
+          completer.completeError(
+            StateError('Failed to create accepted unidirectional stream: $e'),
+          );
+        }
+      } else {
+        completer.completeError(
+          StateError(
+            'Failed to accept unidirectional stream: ${errorPtr.cast<Utf8>().toDartString(length: errorLen)}',
+          ),
+        );
+      }
+      nativeCallback.close();
+    }
+
+    nativeCallback = ffi.NativeCallable<UsizeCallbackFunction>.listener(
+      onResult,
+    );
+
+    _bindings.dart_quic_connection_accept_uni(
+      _executorPtr!,
+      _handlePtr!,
+      nativeCallback.nativeFunction,
+    );
+
+    return completer.future;
+  }
+
+  /// Send an unreliable datagram to the remote peer (fire-and-forget).
+  ///
+  /// QUIC datagrams are unreliable and unordered. The remote peer must have
+  /// datagram support enabled in their transport config.
+  ///
+  /// Returns true on success, false on failure.
+  ///
+  /// Throws [StateError] if the connection is disposed.
+  bool sendDatagram(ffi.Pointer<ffi.Uint8> data, int length) {
+    _checkDisposed();
+
+    final result = _bindings.dart_quic_connection_send_datagram(
+      _handlePtr!,
+      data,
+      length,
+    );
+    return result == 0; // QuicResult::Success == 0
+  }
+
+  /// Read an incoming unreliable datagram from the remote peer.
+  ///
+  /// Returns a [Future] that completes with the raw datagram bytes on success.
+  ///
+  /// Throws [StateError] if the connection is disposed or the read fails.
+  Future<ffi.Pointer<ffi.Uint8>> readDatagram() async {
+    _checkDisposed();
+
+    final completer = Completer<ffi.Pointer<ffi.Uint8>>();
+    late final ffi.NativeCallable<BytesCallbackFunction> nativeCallback;
+
+    void onResult(
+      bool success,
+      ffi.Pointer<ffi.Uint8> dataPtr,
+      int dataLen,
+      ffi.Pointer<ffi.Uint8> errorPtr,
+      int errorLen,
+    ) {
+      if (success) {
+        completer.complete(dataPtr);
+      } else {
+        completer.completeError(
+          StateError(
+            'Failed to read datagram: ${errorPtr.cast<Utf8>().toDartString(length: errorLen)}',
+          ),
+        );
+      }
+      nativeCallback.close();
+    }
+
+    nativeCallback = ffi.NativeCallable<BytesCallbackFunction>.listener(
+      onResult,
+    );
+
+    _bindings.dart_quic_connection_read_datagram(
+      _executorPtr!,
+      _handlePtr!,
+      nativeCallback.nativeFunction,
+    );
+
+    return completer.future;
+  }
+
   /// Close the connection.
   ///
   /// Parameters:

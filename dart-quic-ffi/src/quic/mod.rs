@@ -16,6 +16,6 @@ pub use quic_config::{
 pub use quic_client::{
     QuicClient, QuicFfiClientConfig, QuicFfiTrustMode, QuicFfiClientCertMode,
 };
-pub use quic_server::{QuicServer, QuicFfiServerConfig};
+pub use quic_server::{QuicServer, QuicServerHandle, QuicFfiServerConfig};
 pub use quic_connection::{QuicConnection, QuicConnectionHandle};
 pub use quic_endpoint::{QuicEndpoint, QuicEndpointBuilder, QuicEndpointMode, QuicFfiEndpointConfig};

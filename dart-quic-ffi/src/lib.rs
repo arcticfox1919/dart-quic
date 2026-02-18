@@ -1,11 +1,10 @@
 //! dart-quic-ffi - QUIC FFI bindings for Dart
-//! 
-//! This library provides FFI bindings for QUIC protocol operations.
-//! 
+//!
 //! Module organization:
 //! - lib.rs: Common types, executor, memory manager, transport config
-//! - quic_ffi_client.rs: Client, Connection, Stream FFI
-//! - quic_ffi_server.rs: Server FFI
+//! - quic_ffi_client.rs: Client endpoint FFI
+//! - quic_ffi_conn.rs: Connection handle, stream, datagram FFI
+//! - quic_ffi_server.rs: Server endpoint FFI
 
 pub mod runtime_manager;
 pub mod memory_manager;
@@ -16,6 +15,7 @@ pub mod quic;
 pub mod quic_ffi_stream_result;
 pub mod quic_ffi_endpoint;
 pub mod quic_ffi_client;
+pub mod quic_ffi_conn;
 pub mod quic_ffi_server;
 
 use quic_executor::{QuicExecutor, BoolCallback};
@@ -180,6 +180,56 @@ pub static ERR_PTR_NULL: &str = "Pointer is null";
 pub static ERR_SUBMIT_FAILED: &str = "Failed to submit async task";
 #[doc(hidden)]
 pub static ERR_CONFIG_REQUIRED: &str = "Config is required";
+
+// ============================================
+// Error String Helper
+// ============================================
+
+/// RAII wrapper for an FFI error string allocated on the heap.
+///
+/// Allocates the error message via `crate::allocate` so the pointer is valid
+/// while this guard is alive.  Memory is freed automatically when the guard is
+/// dropped (i.e. immediately after the callback returns).
+///
+/// Usage:
+/// ```rust
+/// let err = FfiErrBuf::new(format!("{}", e));
+/// callback(false, 0, err.as_ptr(), err.len());
+/// // err dropped here → memory freed
+/// ```
+pub struct FfiErrBuf {
+    ptr: *mut u8,
+    len: usize,
+}
+
+impl FfiErrBuf {
+    pub fn new(msg: String) -> Self {
+        let bytes = msg.into_bytes();
+        let len = bytes.len();
+        let ptr = crate::allocate(len);
+        if !ptr.is_null() && len > 0 {
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len); }
+            Self { ptr, len }
+        } else {
+            Self { ptr: std::ptr::null_mut(), len: 0 }
+        }
+    }
+
+    #[inline] pub fn as_ptr(&self) -> *const u8 { self.ptr }
+    #[inline] pub fn len(&self) -> usize { self.len }
+}
+
+impl Drop for FfiErrBuf {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() && self.len > 0 {
+            crate::deallocate(self.ptr, self.len);
+        }
+    }
+}
+
+// SAFETY: FfiErrBuf is only used within a single async task; the raw pointer
+// is owned and not aliased.
+unsafe impl Send for FfiErrBuf {}
 
 // ============================================
 // FFI Check Macros

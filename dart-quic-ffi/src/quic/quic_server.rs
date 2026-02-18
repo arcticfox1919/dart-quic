@@ -210,6 +210,87 @@ impl QuicServer {
 }
 
 // ============================================================================
+// Server Handle (FFI-friendly wrapper returned from async creation)
+// ============================================================================
+
+/// FFI server handle
+///
+/// FFI-friendly structure that wraps a QuicServer pointer along with
+/// commonly used server information. This allows the Dart layer to
+/// directly access server info without additional FFI calls.
+///
+/// # Memory Management
+/// - Allocated and owned entirely by Rust via `Box::into_raw`
+/// - `server`: owned QuicServer pointer
+/// - `local_addr_ptr`: owned string pointer, allocated via `crate::allocate`
+/// - Free the entire handle with `dart_quic_server_handle_free`
+///
+/// # C API Usage
+/// ```c
+/// QuicServerHandle* handle = ...;
+/// printf("Listening on: %.*s\n", (int)handle->local_addr_len, handle->local_addr_ptr);
+/// // Use handle->server for server operations
+/// dart_quic_server_handle_free(handle);
+/// ```
+#[repr(C)]
+pub struct QuicServerHandle {
+    /// Server pointer (pass to all subsequent server operations)
+    pub server: *mut QuicServer,
+    /// Local bind port
+    pub local_port: u16,
+    /// Local address string length
+    pub local_addr_len: u32,
+    /// Local address string (IP:Port format, allocated memory)
+    pub local_addr_ptr: *mut u8,
+}
+
+impl QuicServerHandle {
+    /// Create a new server handle from QuicServer
+    ///
+    /// Takes ownership of the server and allocates local address string.
+    pub fn new(server: QuicServer) -> Self {
+        let local_addr_str = server.local_addr().to_string();
+        let local_port = server.local_port();
+
+        // Allocate and copy local address string
+        let addr_bytes = local_addr_str.as_bytes();
+        let local_addr_ptr = crate::allocate(addr_bytes.len());
+        let local_addr_len = if !local_addr_ptr.is_null() {
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    addr_bytes.as_ptr(),
+                    local_addr_ptr,
+                    addr_bytes.len(),
+                );
+            }
+            addr_bytes.len() as u32
+        } else {
+            0
+        };
+
+        // Box the server and get raw pointer
+        let server_ptr = Box::into_raw(Box::new(server));
+
+        Self {
+            server: server_ptr,
+            local_port,
+            local_addr_len,
+            local_addr_ptr,
+        }
+    }
+
+    /// Create a null/invalid handle
+    pub fn null() -> Self {
+        Self {
+            server: std::ptr::null_mut(),
+            local_port: 0,
+            local_addr_len: 0,
+            local_addr_ptr: std::ptr::null_mut(),
+        }
+    }
+}
+
+// ============================================================================
 // FFI-Friendly Server Configuration
 // ============================================================================
 
@@ -249,8 +330,8 @@ pub struct QuicFfiServerConfig {
     pub client_ca_ptr: *const u8,
     /// Client CA certificate DER length (bytes)
     pub client_ca_len: u32,
-    /// Transport configuration
-    pub transport: super::quic_config::QuicFfiTransportConfig,
+    /// Transport configuration (optional, null uses default)
+    pub transport: *const super::quic_config::QuicFfiTransportConfig,
 }
 
 impl Default for QuicFfiServerConfig {
@@ -268,7 +349,7 @@ impl Default for QuicFfiServerConfig {
             client_auth_mode: 0,
             client_ca_ptr: std::ptr::null(),
             client_ca_len: 0,
-            transport: super::quic_config::QuicFfiTransportConfig::default(),
+            transport: std::ptr::null(),
         }
     }
 }
@@ -346,12 +427,105 @@ impl QuicFfiServerConfig {
             };
         }
         
-        // Configure transport parameters
-        let transport_config = super::quic_config::QuicTransportConfig::from(&self.transport);
-        builder = builder.with_transport_config(transport_config);
-        
+        // Configure transport parameters (null means use defaults)
+        if !self.transport.is_null() {
+            let transport_config = super::quic_config::QuicTransportConfig::from(unsafe { &*self.transport });
+            builder = builder.with_transport_config(transport_config);
+        }
+
         // Build Quinn config
         builder.build_config()
+    }
+
+    /// Build QuicServer from FFI configuration
+    ///
+    /// This is the primary entry point for creating a `QuicServer` from an FFI config.
+    /// Delegates certificate parsing and builder construction to `QuicServerConfigBuilder`,
+    /// then internally calls `bind()` to create the server endpoint.
+    ///
+    /// # Parameters
+    /// - `bind_addr`: Address to bind, e.g. "0.0.0.0:4433"
+    pub fn build(&self, bind_addr: &str) -> Result<QuicServer, QuicError> {
+        use std::ffi::CStr;
+        use super::quic_config::QuicServerConfigBuilder;
+
+        let mut builder = QuicServerConfigBuilder::new();
+
+        // Configure certificate based on mode
+        builder = match self.cert_mode {
+            0 => {
+                // File mode
+                if self.cert_path_ptr.is_null() || self.key_path_ptr.is_null() {
+                    return Err(QuicError::unknown("Certificate and key paths are required for file mode".to_string()));
+                }
+                let cert_path = unsafe { CStr::from_ptr(self.cert_path_ptr) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid certificate path encoding".to_string()))?;
+                let key_path = unsafe { CStr::from_ptr(self.key_path_ptr) }
+                    .to_str()
+                    .map_err(|_| QuicError::unknown("Invalid key path encoding".to_string()))?;
+                builder.with_cert_pem_files(cert_path, key_path)?
+            }
+            1 => {
+                // Memory mode
+                if self.cert_der_ptr.is_null() || self.cert_der_len == 0
+                    || self.key_der_ptr.is_null() || self.key_der_len == 0
+                {
+                    return Err(QuicError::unknown("Certificate and key data are required for memory mode".to_string()));
+                }
+                let cert_der = unsafe { std::slice::from_raw_parts(self.cert_der_ptr, self.cert_der_len as usize) }.to_vec();
+                let key_der = unsafe { std::slice::from_raw_parts(self.key_der_ptr, self.key_der_len as usize) }.to_vec();
+                builder.with_cert_der(cert_der, key_der)
+            }
+            2 => {
+                // Self-signed mode
+                let san_list: Vec<String> = if !self.san_ptr.is_null() && self.san_count > 0 {
+                    let san_ptrs = unsafe { std::slice::from_raw_parts(self.san_ptr, self.san_count as usize) };
+                    san_ptrs
+                        .iter()
+                        .filter_map(|&ptr| {
+                            if !ptr.is_null() {
+                                unsafe { CStr::from_ptr(ptr) }.to_str().ok().map(|s| s.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                };
+                let san_refs: Vec<&str> = san_list.iter().map(|s| s.as_str()).collect();
+                builder.with_self_signed(&san_refs)
+            }
+            _ => return Err(QuicError::unknown(format!("Invalid cert mode: {}", self.cert_mode))),
+        };
+
+        // Configure client authentication (mTLS)
+        if self.client_auth_mode > 0 {
+            if self.client_ca_ptr.is_null() || self.client_ca_len == 0 {
+                return Err(QuicError::unknown(
+                    "Client CA certificate data is required when client auth is enabled".to_string(),
+                ));
+            }
+            let client_ca_der = unsafe {
+                std::slice::from_raw_parts(self.client_ca_ptr, self.client_ca_len as usize)
+            }
+            .to_vec();
+            builder = if self.client_auth_mode == 1 {
+                builder.require_client_cert(client_ca_der) // Required
+            } else {
+                builder.optional_client_cert(client_ca_der) // Optional
+            };
+        }
+
+        // Configure transport parameters (null means use defaults)
+        if !self.transport.is_null() {
+            let transport_config = super::quic_config::QuicTransportConfig::from(unsafe { &*self.transport });
+            builder = builder.with_transport_config(transport_config);
+        }
+
+        // Bind and create server
+        builder.bind(bind_addr)
     }
 }
 

@@ -16,14 +16,12 @@ import 'package:ffi/ffi.dart' as ffi;
 ///
 /// Example:
 /// ```dart
-/// final config = QuicClientConfig.withSystemRoots();
-/// final client = await QuicClientEndpoint.create(config);
+/// final client = await QuicClientEndpoint.create(QuicClientConfig.withSystemRoots());
 /// try {
-///   final connection = await client.connect(
-///     SocketAddress.parse('127.0.0.1:4433'),
-///     serverName: 'localhost',
-///   );
-///   // Use connection...
+///   // Using SocketAddress:
+///   final conn = await client.connect(serverAddr: SocketAddress.parse('127.0.0.1:4433'), serverName: 'localhost');
+///   // Or using a plain string:
+///   final conn = await client.connectTo(serverAddr: '127.0.0.1:4433', serverName: 'localhost');
 /// } finally {
 ///   await client.close();
 ///   client.dispose();
@@ -181,12 +179,17 @@ class QuicClientEndpoint {
   /// Connect to a QUIC server.
   ///
   /// Parameters:
-  /// - [serverAddr]: Server address (IP:port)
-  /// - [serverName]: Server name for SNI (TLS Server Name Indication)
+  /// - [serverAddr]: Server address as a [SocketAddress].
+  /// - [serverName]: Server name for SNI (TLS Server Name Indication).
   ///
   /// Returns a [Future] that completes with a [QuicConn] on success.
   /// Throws [StateError] if the client is disposed or connection fails.
-  Future<QuicConn> connect(SocketAddress serverAddr, String serverName) async {
+  ///
+  /// See also [connectTo] for a convenience overload that accepts a plain string.
+  Future<QuicConn> connect({
+    required SocketAddress serverAddr,
+    required String serverName,
+  }) async {
     _checkDisposed();
 
     final completer = Completer<QuicConn>();
@@ -243,6 +246,19 @@ class QuicClientEndpoint {
 
     return completer.future;
   }
+
+  /// Convenience overload of [connect] that accepts the server address as a
+  /// plain [String] (e.g. `'127.0.0.1:4433'`).
+  ///
+  /// The string is validated and parsed into a [SocketAddress] before
+  /// connecting. Throws [ArgumentError] on invalid format.
+  Future<QuicConn> connectTo({
+    required String serverAddr,
+    required String serverName,
+  }) => connect(
+    serverAddr: SocketAddress.parse(serverAddr),
+    serverName: serverName,
+  );
 
   /// Close the client and all its connections.
   ///
