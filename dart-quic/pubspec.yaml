@@ -1,12 +1,14 @@
 name: dart_quic
-description: A starting point for Dart libraries or applications.
-version: 1.0.0
+description: A Dart QUIC library built on quinn via FFI, with async client/server API and stream/datagram support.
+version: 0.1.0
 homepage: https://github.com/arcticfox1919/dart-quic
 repository: https://github.com/arcticfox1919/dart-quic
 
 
 topics:
   - quic
+  - quinn
+  - QUIC
 
 environment:
   sdk: ^3.8.1

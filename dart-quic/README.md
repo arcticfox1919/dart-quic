@@ -1,39 +1,72 @@
-<!-- 
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# dart-quic
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages). 
+A Dart library for QUIC protocol communication, built on top of [quinn](https://github.com/quinn-rs/quinn) via FFI.
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages). 
--->
+## Structure
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+```
+dart-quic/        # Dart package (pub)
+dart-quic-ffi/    # Rust FFI crate (quinn wrapper, compiled to a native shared library)
+build_scripts/    # Helper scripts for building and regenerating FFI bindings
+```
 
 ## Features
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+- QUIC client and server endpoints
+- Bidirectional and unidirectional streams
+- Datagram support
+- Self-signed certificate generation for testing
+- Async/await API built on a Tokio runtime managed internally
 
-## Getting started
+## Quick start
 
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
-
-## Usage
-
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder. 
+**Server**
 
 ```dart
-const like = 'sample';
+// Load native library and initialize
+LibraryLoader.setCustomLoader(() => DynamicLibrary.open('path/dart_quic_ffi.so'));
+QuicInitializer.initialize();
+
+// Bind with a self-signed certificate (testing only)
+final server = await QuicServerEndpoint.bind(
+  QuicServerConfig.selfSigned(bindAddr: '0.0.0.0:4433', sanList: ['localhost']),
+);
+
+while (true) {
+  final conn = await server.accept();
+  if (conn == null) break; // server closed
+  final stream = await conn.acceptBiStream();
+  final data = await stream.read(4096);
+  await stream.write(data); // echo back
+  stream.finish();
+}
+
+server.dispose();
 ```
 
-## Additional information
+**Client**
 
-TODO: Tell users more about the package: where to find more information, how to 
-contribute to the package, how to file issues, what response they can expect 
-from the package authors, and more.
+```dart
+LibraryLoader.setCustomLoader(() => DynamicLibrary.open('path/dart_quic_ffi.so'));
+QuicInitializer.initialize();
+
+final client = await QuicClientEndpoint.create(
+  QuicClientConfig.withSkipVerification(), // testing only; use withSystemRoots() in production
+);
+// Using SocketAddress:
+final conn = await client.connect(
+  serverAddr: SocketAddress.parse('127.0.0.1:4433'),
+  serverName: 'localhost',
+);
+// Or using a plain string:
+// final conn = await client.connectTo(serverAddr: '127.0.0.1:4433', serverName: 'localhost');
+final stream = await conn.openBiStream();
+await stream.writeString('Hello, QUIC!');
+stream.finish();
+final response = await stream.read(4096);
+print(String.fromCharCodes(response));
+
+client.dispose();
+```
+
+See `dart-quic/example/` for full examples.
