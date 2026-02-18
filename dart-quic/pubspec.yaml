@@ -8,7 +8,7 @@ repository: https://github.com/arcticfox1919/dart-quic
 topics:
   - quic
   - quinn
-  - QUIC
+  - networking
 
 environment:
   sdk: ^3.8.1
