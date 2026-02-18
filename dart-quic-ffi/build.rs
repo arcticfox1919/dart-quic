@@ -21,9 +21,25 @@ fn main() {
     };
 
     cbindgen::Builder::new()
-        .with_crate(crate_dir)
+        .with_crate(&crate_dir)
         .with_config(config)
         .generate()
         .expect("Unable to generate bindings")
-        .write_to_file(output_file);
+        .write_to_file(&output_file);
+
+    // Copy header file to dart-quic/include directory
+    let dart_quic_include = PathBuf::from(&crate_dir)
+        .parent()
+        .unwrap()
+        .join("dart-quic")
+        .join("include");
+    
+    if let Err(e) = std::fs::create_dir_all(&dart_quic_include) {
+        eprintln!("Warning: Failed to create dart-quic/include directory: {}", e);
+    } else {
+        let dest_file = dart_quic_include.join("dart_quic_ffi.h");
+        if let Err(e) = std::fs::copy(&output_file, &dest_file) {
+            eprintln!("Warning: Failed to copy header file to dart-quic/include: {}", e);
+        }
+    }
 }

@@ -12,92 +12,568 @@
 #include <stdlib.h>
 
 /**
+ * Endpoint operation mode (for C API)
  *
- * High-efficiency binary protocol - for Rust and Dart FFI communication
+ * The QUIC protocol allows the same UDP port to act as both client and server simultaneously,
+ * which is an important distinction from traditional TCP.
+ * This enum is used to specify the endpoint's operation mode at the FFI layer.
  *
- * Protocol version - for backward compatibility
+ * # Usage Example
+ *
+ * ```c
+ * // C API example
+ * FfiEndpointConfig config = {
+ *     .mode = QuicEndpointMode_ClientOnly,  // Client-only
+ *     .bind_ip = 0,      // INADDR_ANY
+ *     .bind_port = 0,    // System-assigned port
+ * };
+ * ```
  */
-#define PROTOCOL_VERSION 1
+enum QuicEndpointMode {
+  /**
+   * Client-only mode
+   *
+   * - Can only use `connect()` to initiate outgoing connections
+   * - Cannot use `accept()` to accept incoming connections
+   * - Suitable for: regular client applications, crawlers, API callers
+   * - Bind address typically `0.0.0.0:0` (system auto-assigned port)
+   */
+  ClientOnly = 0,
+  /**
+   * Server-only mode
+   *
+   * - Can only use `accept()` to accept incoming connections
+   * - Cannot use `connect()` to initiate outgoing connections
+   * - Suitable for: web servers, API services, game servers
+   * - Bind address typically `0.0.0.0:4433` (fixed port)
+   */
+  ServerOnly = 1,
+  /**
+   * Bidirectional mode (simultaneously client and server)
+   *
+   * - Supports both `connect()` and `accept()`
+   * - The same UDP port can both initiate and accept connections
+   * - Suitable for:
+   *   - P2P networks (BitTorrent, IPFS)
+   *   - Game server clusters (accept players and connect to other servers)
+   *   - Microservices (bidirectional inter-service communication)
+   *   - NAT traversal scenarios
+   */
+  Bidirectional = 2,
+};
+typedef uint8_t QuicEndpointMode;
 
 /**
- * Protocol magic number
+ * Client certificate mode (mTLS)
  */
-#define PROTOCOL_MAGIC 3669818881
+enum QuicFfiClientCertMode {
+  /**
+   * No client certificate
+   */
+  None = 0,
+  /**
+   * Load from DER memory
+   */
+  Der = 1,
+  /**
+   * Load from PEM file
+   */
+  PemFile = 2,
+  /**
+   * Load from DER file
+   */
+  DerFile = 3,
+};
+typedef uint8_t QuicFfiClientCertMode;
 
-typedef struct AsyncDartTaskExecutor_QuicCommandHandler AsyncDartTaskExecutor_QuicCommandHandler;
+/**
+ * Trust mode
+ */
+enum QuicFfiTrustMode {
+  /**
+   * Skip verification (testing only! dangerous!)
+   */
+  SkipVerification = 0,
+  /**
+   * Use system root certificates (recommended for production)
+   */
+  SystemRoots = 1,
+  /**
+   * Use custom CA (DER in memory)
+   */
+  CustomCaDer = 2,
+  /**
+   * Use custom CA (PEM file)
+   */
+  CustomCaPemFile = 3,
+  /**
+   * Use custom CA (DER file)
+   */
+  CustomCaDerFile = 4,
+};
+typedef uint8_t QuicFfiTrustMode;
 
 typedef struct MemoryStats MemoryStats;
 
-typedef struct AsyncDartTaskExecutor_QuicCommandHandler QuicTaskExecutor;
-
-typedef int64_t DartPort;
-
-typedef uint64_t TaskId;
+/**
+ * QUIC Client
+ *
+ * A client-specific wrapper based on `QuicEndpoint`.
+ * **A single client can maintain multiple connections to different servers simultaneously.**
+ *
+ * # Internal Structure
+ * ```text
+ * QuicClient
+ *   └── inner: QuicEndpoint  // Low-level unified endpoint
+ * ```
+ *
+ * # Multiple Connections Example
+ * ```rust
+ * let client = QuicClient::builder()
+ *     .with_system_roots()
+ *     .bind("0.0.0.0:0")?;
+ *
+ * // Connect to multiple servers from the same local port
+ * let conn1 = client.connect("server1:443", "server1").await?;
+ * let conn2 = client.connect("server2:443", "server2").await?;
+ * let conn3 = client.connect("server3:443", "server3").await?;
+ *
+ * println!("All connections share local port: {}", client.local_port());
+ * ```
+ *
+ * # Thread Safety
+ * `QuicClient` is thread-safe and can be shared across multiple threads.
+ */
+typedef struct QuicClient QuicClient;
 
 /**
- * Create QUIC task executor
+ * QUIC Connection
+ *
+ * Wraps a single QUIC connection, providing stream operation APIs.
+ * This type is used by both `QuicClient` and `QuicServer`.
+ *
+ * # Thread Safety
+ * `QuicConnection` is thread-safe and can be safely used across multiple threads.
  */
-QuicTaskExecutor *dart_quic_executor_new(DartPort dart_port);
+typedef struct QuicConnection QuicConnection;
 
 /**
- * Initialize QUIC executor runtime (async, returns TaskId for event tracking)
+ * QUIC Unified Endpoint
+ *
+ * Represents a QUIC endpoint bound to a local UDP port.
+ * Depending on configuration, it can have client/server capabilities simultaneously or individually.
+ *
+ * # Capability Overview
+ *
+ * | Capability | Required Config | Corresponding Method |
+ * |-----------|----------------|---------------------|
+ * | Initiate connections | ClientConfig | `connect()` |
+ * | Accept connections | ServerConfig | `accept()` |
+ *
+ * # Thread Safety
+ * `QuicEndpoint` is thread-safe and can be safely shared across multiple threads.
  */
-TaskId dart_quic_executor_init_runtime(QuicTaskExecutor *executor, uintptr_t threads);
+typedef struct QuicEndpoint QuicEndpoint;
 
 /**
- * Submit QUIC task
+ * Simplified QUIC executor - only manages tokio runtime
  */
-TaskId dart_quic_executor_submit_params(QuicTaskExecutor *executor,
-                                        uint8_t command_type,
-                                        uint8_t *data_ptr,
-                                        uintptr_t data_len,
-                                        uint64_t *params_ptr,
-                                        uintptr_t params_count);
+typedef struct QuicExecutor QuicExecutor;
 
 /**
- * Check QUIC executor running status
+ * QUIC Server
+ *
+ * Server-specific wrapper based on `QuicEndpoint`.
+ *
+ * # Internal Structure
+ * ```text
+ * QuicServer
+ *   └── inner: QuicEndpoint  // Low-level unified endpoint
+ * ```
+ *
+ * # Core Concepts
+ *
+ * - One server can handle multiple client connections simultaneously
+ * - Supports runtime certificate updates (doesn't affect existing connections)
+ * - Supports mTLS mutual authentication
+ *
+ * # Thread Safety
+ * `QuicServer` is thread-safe and can be safely shared across multiple threads.
  */
-bool dart_quic_executor_is_running(QuicTaskExecutor *executor);
+typedef struct QuicServer QuicServer;
 
 /**
- * Release QUIC executor - returns immediately, closes asynchronously
+ * Generic FFI result structure for C API interop.
+ * Used for sync operations that need to return both a handle and potential error.
  */
-void dart_quic_executor_free(QuicTaskExecutor *executor);
+typedef struct QuicFfiResult {
+  void *handle;
+  uint8_t *error_msg;
+  uintptr_t error_msg_len;
+} QuicFfiResult;
 
 /**
- * Release QUIC executor - synchronous version (will block)
+ * Callback for bool result
  */
-void dart_quic_executor_free_sync(QuicTaskExecutor *executor);
+typedef void (*BoolCallback)(bool success, bool value, const uint8_t *error_ptr, uintptr_t error_len);
 
 /**
- * Allocate native memory
+ * FFI-friendly transport configuration
+ *
+ * # C Language Usage Example
+ *
+ * ```c
+ * QuicFfiTransportConfig transport = {
+ *     .max_idle_timeout_ms = 30000,
+ *     .keep_alive_interval_ms = 15000,
+ *     // ...
+ * };
+ * ```
  */
+typedef struct QuicFfiTransportConfig {
+  uint64_t max_idle_timeout_ms;
+  uint64_t keep_alive_interval_ms;
+  uint32_t max_concurrent_bi_streams;
+  uint32_t max_concurrent_uni_streams;
+  uint32_t stream_receive_window;
+  uint64_t send_window;
+  uint64_t initial_rtt_ms;
+  uint16_t initial_mtu;
+  uint16_t min_mtu;
+  bool enable_mtu_discovery;
+  uint32_t datagram_receive_buffer_size;
+  uint32_t datagram_send_buffer_size;
+  uint8_t congestion_controller;
+  bool allow_spin;
+  bool enable_gso;
+} QuicFfiTransportConfig;
+
+/**
+ * Unified stream handle with metadata
+ *
+ * FFI-friendly structure wrapping a stream pointer, its ID, and type.
+ * The stream pointer can be either `SendStream*` or `RecvStream*` depending on `stream_type`.
+ */
+typedef struct QuicFfiStreamHandle {
+  /**
+   * Stream pointer (cast to void* for FFI, actual type depends on stream_type)
+   */
+  void *stream;
+  /**
+   * Stream ID
+   */
+  uint64_t stream_id;
+  /**
+   * Stream type (0 = Recv, 1 = Send)
+   */
+  uint8_t stream_type;
+} QuicFfiStreamHandle;
+
+/**
+ * C-compatible structure for stream pair
+ * Contains both send and recv stream handles (one or both may be null)
+ */
+typedef struct QuicFfiStreamPair {
+  /**
+   * Send stream handle (null if not applicable)
+   */
+  struct QuicFfiStreamHandle *send_handle;
+  /**
+   * Recv stream handle (null if not applicable)
+   */
+  struct QuicFfiStreamHandle *recv_handle;
+} QuicFfiStreamPair;
+
+/**
+ * Callback for bytes result
+ */
+typedef void (*BytesCallback)(bool success,
+                              uint8_t *ptr,
+                              uintptr_t len,
+                              const uint8_t *error_ptr,
+                              uintptr_t error_len);
+
+/**
+ * Callback for usize result (used for pointers/handles)
+ */
+typedef void (*UsizeCallback)(bool success,
+                              uintptr_t value,
+                              const uint8_t *error_ptr,
+                              uintptr_t error_len);
+
+/**
+ * Callback for void result
+ */
+typedef void (*VoidCallback)(bool success, const uint8_t *error_ptr, uintptr_t error_len);
+
+/**
+ * FFI endpoint configuration (for C API)
+ *
+ * # Field Descriptions
+ *
+ * - `mode`: Endpoint operation mode, determines what operations the endpoint can perform
+ * - `bind_ip`: Local IP address (network byte order), 0 means bind to all interfaces
+ * - `bind_port`: Local port number (host byte order), 0 means system auto-assign
+ *
+ * # C Language Usage Example
+ *
+ * ```c
+ * QuicFfiEndpointConfig config = {
+ *     .mode = QuicEndpointMode_ClientOnly,
+ *     .bind_ip = 0,      // INADDR_ANY
+ *     .bind_port = 0,    // System-assigned port
+ * };
+ *
+ * QuicEndpoint* endpoint = quic_endpoint_create(&config);
+ * ```
+ */
+typedef struct QuicFfiEndpointConfig {
+  /**
+   * Endpoint operation mode
+   */
+  QuicEndpointMode mode;
+  /**
+   * Local bind IP (network byte order, 0 means INADDR_ANY)
+   */
+  uint32_t bind_ip;
+  /**
+   * Local bind port (host byte order, 0 means system-assigned)
+   */
+  uint16_t bind_port;
+} QuicFfiEndpointConfig;
+
+/**
+ * FFI-friendly client configuration
+ *
+ * Unified configuration for all client initialization options, including:
+ * - Trust mode: skip verification, system root certificates, custom CA
+ * - Client certificate (mTLS): none, DER memory, PEM file, DER file
+ * - Transport configuration
+ * - Bind address
+ *
+ * # C Language Usage Examples
+ *
+ * ```c
+ * // Use system root certificates
+ * QuicFfiClientConfig config = {
+ *     .trust_mode = QuicFfiTrustMode_SystemRoots,
+ *     .bind_addr = "0.0.0.0:0",
+ *     .transport_config = &transport,  // Optional
+ * };
+ *
+ * // Skip verification (testing)
+ * QuicFfiClientConfig config = {
+ *     .trust_mode = QuicFfiTrustMode_SkipVerification,
+ * };
+ *
+ * // Use custom CA (DER in memory)
+ * QuicFfiClientConfig config = {
+ *     .trust_mode = QuicFfiTrustMode_CustomCaDer,
+ *     .ca_cert_data = ca_der_bytes,
+ *     .ca_cert_len = ca_der_len,
+ * };
+ *
+ * // Use custom CA (PEM file)
+ * QuicFfiClientConfig config = {
+ *     .trust_mode = QuicFfiTrustMode_CustomCaPemFile,
+ *     .ca_cert_path = "/path/to/ca.pem",
+ * };
+ *
+ * // With client certificate (mTLS, PEM file)
+ * QuicFfiClientConfig config = {
+ *     .trust_mode = QuicFfiTrustMode_SystemRoots,
+ *     .client_cert_mode = QuicFfiClientCertMode_PemFile,
+ *     .client_cert_path = "/path/to/client.pem",
+ *     .client_key_path = "/path/to/client.key",
+ * };
+ * ```
+ */
+typedef struct QuicFfiClientConfig {
+  /**
+   * Trust mode
+   */
+  QuicFfiTrustMode trust_mode;
+  /**
+   * CA certificate data (for CustomCaDer mode)
+   */
+  const uint8_t *ca_cert_data;
+  /**
+   * CA certificate data length (bytes)
+   */
+  uint32_t ca_cert_len;
+  /**
+   * CA certificate/file path (for CustomCaPemFile/CustomCaDerFile modes)
+   * UTF-8 encoded C string
+   */
+  const char *ca_cert_path;
+  /**
+   * Client certificate mode
+   */
+  QuicFfiClientCertMode client_cert_mode;
+  /**
+   * Client certificate data (for Der mode)
+   */
+  const uint8_t *client_cert_data;
+  /**
+   * Client certificate data length (bytes)
+   */
+  uint32_t client_cert_len;
+  /**
+   * Client private key data (for Der mode)
+   */
+  const uint8_t *client_key_data;
+  /**
+   * Client private key data length (bytes)
+   */
+  uint32_t client_key_len;
+  /**
+   * Client certificate file path (for PemFile/DerFile modes)
+   */
+  const char *client_cert_path;
+  /**
+   * Client private key file path (for PemFile/DerFile modes)
+   */
+  const char *client_key_path;
+  /**
+   * Transport configuration (optional, NULL uses default)
+   */
+  const struct QuicFfiTransportConfig *transport_config;
+  /**
+   * Local bind address (optional, NULL or empty string uses "0.0.0.0:0")
+   */
+  const char *bind_addr;
+} QuicFfiClientConfig;
+
+/**
+ * FFI server configuration (for C API)
+ *
+ * # C Language Usage Example
+ *
+ * ```c
+ * QuicFfiServerConfig config = {
+ *     .cert_mode = 2,  // Self-signed certificate
+ *     // ... other fields
+ * };
+ * ```
+ */
+typedef struct QuicFfiServerConfig {
+  /**
+   * Certificate mode: 0 = file, 1 = memory, 2 = self-signed
+   */
+  uint32_t cert_mode;
+  /**
+   * Certificate file path (used when cert_mode = 0)
+   */
+  const char *cert_path_ptr;
+  /**
+   * Private key file path (used when cert_mode = 0)
+   */
+  const char *key_path_ptr;
+  /**
+   * Certificate DER data (used when cert_mode = 1)
+   */
+  const uint8_t *cert_der_ptr;
+  /**
+   * Certificate DER data length (bytes)
+   */
+  uint32_t cert_der_len;
+  /**
+   * Private key DER data (used when cert_mode = 1)
+   */
+  const uint8_t *key_der_ptr;
+  /**
+   * Private key DER data length (bytes)
+   */
+  uint32_t key_der_len;
+  /**
+   * Self-signed SAN list (used when cert_mode = 2)
+   */
+  const char *const *san_ptr;
+  /**
+   * SAN list count
+   */
+  uint32_t san_count;
+  /**
+   * Client authentication mode: 0 = not required, 1 = required, 2 = optional
+   */
+  uint32_t client_auth_mode;
+  /**
+   * Client CA certificate DER (used when client_auth_mode > 0)
+   */
+  const uint8_t *client_ca_ptr;
+  /**
+   * Client CA certificate DER length (bytes)
+   */
+  uint32_t client_ca_len;
+  /**
+   * Transport configuration
+   */
+  struct QuicFfiTransportConfig transport;
+} QuicFfiServerConfig;
+
+/**
+ * Connection handle (for C API)
+ *
+ * FFI-friendly structure that wraps a QuicConnection pointer along with
+ * commonly used connection information. This allows the Dart layer to
+ * directly access connection info without additional FFI calls.
+ *
+ * # Memory Management
+ * - `connection`: Owned pointer, must be freed via `dart_quic_connection_handle_free`
+ * - `remote_addr`: Owned string pointer, freed together with handle
+ *
+ * # C API Usage
+ * ```c
+ * QuicConnectionHandle* handle = ...;
+ * printf("Connected to: %.*s\n", (int)handle->remote_addr_len, handle->remote_addr);
+ * // Use handle->connection for stream operations
+ * dart_quic_connection_handle_free(handle);
+ * ```
+ */
+typedef struct QuicConnectionHandle {
+  /**
+   * Connection pointer (for subsequent operations)
+   */
+  struct QuicConnection *connection;
+  /**
+   * Connection stable ID (unique identifier)
+   */
+  uint64_t stable_id;
+  /**
+   * Remote address string (IP:Port format, allocated memory)
+   */
+  uint8_t *remote_addr;
+  /**
+   * Remote address string length
+   */
+  uint32_t remote_addr_len;
+} QuicConnectionHandle;
+
+/**
+ * Free error message allocated by QuicFfiResult
+ */
+void dart_quic_ffi_result_free_error(struct QuicFfiResult *result);
+
+struct QuicExecutor *dart_quic_executor_new(void);
+
+void dart_quic_executor_init(struct QuicExecutor *executor,
+                             uintptr_t threads,
+                             BoolCallback callback);
+
+bool dart_quic_executor_is_running(struct QuicExecutor *executor);
+
+void dart_quic_executor_free(struct QuicExecutor *executor);
+
 uint8_t *dart_allocate_memory(uintptr_t size);
 
-/**
- * Release native allocated memory - requires providing original allocation size
- */
 void dart_free_memory(uint8_t *ptr, uintptr_t size);
 
-/**
- * Get memory manager statistics
- */
 const struct MemoryStats *dart_get_memory_stats(void);
 
-/**
- * Release memory statistics structure
- */
 void dart_free_memory_stats(struct MemoryStats *stats);
 
-/**
- * Initialize global memory manager (default configuration)
- */
 bool dart_initialize_memory_manager(void);
 
-/**
- * Initialize global memory manager with custom configuration
- * Parameter -1 means use default value, otherwise use specified value
- */
 bool dart_initialize_memory_manager_with_config(int32_t tiny_pool_size,
                                                 int32_t small_pool_size,
                                                 int32_t medium_pool_size,
@@ -105,14 +581,536 @@ bool dart_initialize_memory_manager_with_config(int32_t tiny_pool_size,
                                                 int32_t huge_pool_size,
                                                 int32_t xlarge_pool_size);
 
-/**
- * Destroy global memory manager
- */
 bool dart_destroy_memory_manager(void);
 
-/**
- * Check if memory manager is available
- */
 bool dart_is_memory_manager_available(void);
+
+int32_t dart_quic_transport_config_default(struct QuicFfiResult *result);
+
+void dart_quic_transport_config_free(struct QuicFfiTransportConfig *config);
+
+/**
+ * Free stream pair structure
+ */
+void dart_quic_stream_pair_free(struct QuicFfiStreamPair *pair);
+
+/**
+ * Free stream handle (works for both send and recv streams)
+ */
+void dart_quic_stream_handle_free(struct QuicFfiStreamHandle *handle);
+
+/**
+ * Read data contiguously from the stream
+ *
+ * Returns the number of bytes read via callback, or None (ptr=null, len=0) if stream is finished.
+ *
+ * **Memory Management Note:**
+ * This function allocates `max_len` bytes upfront to avoid an extra memory copy.
+ * The actual bytes read (n) may be less than `max_len`, meaning some allocated memory
+ * may be unused. Callers should:
+ * - Use reasonable `max_len` values (e.g., 4KB-64KB, not 1MB+)
+ * - Only access the first `n` bytes returned in the callback
+ * - Call `dart_free_memory(ptr, max_len)` to deallocate when done
+ *
+ * This design prioritizes zero-copy performance over memory efficiency.
+ *
+ * # Parameters
+ * - `executor`: QuicExecutor for async execution
+ * - `handle`: Stream handle (must be of type Recv)
+ * - `max_len`: Maximum bytes to read (will allocate this much memory)
+ * - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
+ *   - On success: callback(true, buf, bytes_read, null, 0) where bytes_read <= max_len
+ *   - On EOF: callback(true, null, 0, null, 0)
+ *   - On error: callback(false, null, 0, error_ptr, error_len)
+ */
+void dart_quic_recv_stream_read(struct QuicExecutor *executor,
+                                struct QuicFfiStreamHandle *handle,
+                                uintptr_t max_len,
+                                BytesCallback callback);
+
+/**
+ * Read exact number of bytes from the stream
+ *
+ * Reads exactly `exact_len` bytes or fails.
+ *
+ * **Memory Management Note:**
+ * This function allocates exactly `exact_len` bytes since we know the exact size needed.
+ * No memory waste occurs. Caller must free exactly `exact_len` bytes.
+ *
+ * # Parameters
+ * - `executor`: QuicExecutor for async execution
+ * - `handle`: Stream handle (must be of type Recv)
+ * - `exact_len`: Exact number of bytes to read
+ * - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
+ *   - On success: callback(true, buf, exact_len, null, 0)
+ *   - On error: callback(false, null, 0, error_ptr, error_len)
+ */
+void dart_quic_recv_stream_read_exact(struct QuicExecutor *executor,
+                                      struct QuicFfiStreamHandle *handle,
+                                      uintptr_t exact_len,
+                                      BytesCallback callback);
+
+/**
+ * Read all remaining data from the stream
+ *
+ * Reads until EOF, up to `size_limit` bytes.
+ *
+ * # Parameters
+ * - `executor`: QuicExecutor for async execution
+ * - `handle`: Stream handle (must be of type Recv)
+ * - `size_limit`: Maximum bytes to read (prevents memory exhaustion)
+ * - `callback`: Called with (success, data_ptr, data_len, error_ptr, error_len)
+ *   - On success: callback(true, buf, total_bytes, null, 0)
+ *   - On error: callback(false, null, 0, error_ptr, error_len)
+ */
+void dart_quic_recv_stream_read_to_end(struct QuicExecutor *executor,
+                                       struct QuicFfiStreamHandle *handle,
+                                       uintptr_t size_limit,
+                                       BytesCallback callback);
+
+/**
+ * Write bytes to the send stream
+ *
+ * Returns the number of bytes written. May write less than the full buffer due to
+ * congestion and flow control.
+ *
+ * # Parameters
+ * - `executor`: QuicExecutor for async execution
+ * - `handle`: Stream handle (must be of type Send)
+ * - `data`: Data to write
+ * - `data_len`: Data length
+ * - `callback`: Called with (success, bytes_written, error_ptr, error_len)
+ *   - On success: callback(true, bytes_written, null, 0)
+ *   - On error: callback(false, 0, error_ptr, error_len)
+ */
+void dart_quic_send_stream_write(struct QuicExecutor *executor,
+                                 struct QuicFfiStreamHandle *handle,
+                                 const uint8_t *data,
+                                 uintptr_t data_len,
+                                 UsizeCallback callback);
+
+/**
+ * Write all bytes to the send stream
+ *
+ * Writes the entire buffer, looping internally if needed due to flow control.
+ *
+ * # Parameters
+ * - `executor`: QuicExecutor for async execution
+ * - `handle`: Stream handle (must be of type Send)
+ * - `data`: Data to write
+ * - `data_len`: Data length
+ * - `callback`: Called with (success, error_ptr, error_len)
+ *   - On success: callback(true, null, 0)
+ *   - On error: callback(false, error_ptr, error_len)
+ */
+void dart_quic_send_stream_write_all(struct QuicExecutor *executor,
+                                     struct QuicFfiStreamHandle *handle,
+                                     const uint8_t *data,
+                                     uintptr_t data_len,
+                                     VoidCallback callback);
+
+/**
+ * Notify the peer that no more data will be written to this stream (sync)
+ *
+ * It is an error to write to a stream after finishing it.
+ *
+ * # Parameters
+ * - `handle`: Stream handle (must be of type Send)
+ *
+ * # Returns
+ * - 0 (Success) on success
+ * - Error code on failure
+ */
+int32_t dart_quic_send_stream_finish(struct QuicFfiStreamHandle *handle);
+
+/**
+ * Create a QUIC endpoint with specified configuration
+ *
+ * # Parameters
+ * - `config`: Endpoint configuration (mode, bind IP, bind port)
+ * - `client_config`: Client config handle (nullable based on mode)
+ * - `server_config`: Server config handle (nullable based on mode)
+ * - `result`: Output parameter for endpoint pointer or error
+ *
+ * # Returns
+ * - 0 on success (endpoint pointer in result)
+ * - Non-zero error code on failure
+ *
+ * # Mode Requirements
+ * - ClientOnly: client_config must be provided, server_config must be null
+ * - ServerOnly: server_config must be provided, client_config must be null
+ * - Bidirectional: both client_config and server_config must be provided
+ *
+ * # Safety
+ * - config and result must be valid pointers
+ * - client_config/server_config must be valid or null based on mode
+ * Create a QUIC endpoint
+ *
+ * # Parameters
+ * - `config`: Endpoint configuration (mode and bind address)
+ * - `client`: QuicClient pointer (nullable, required for Client/Bidirectional modes, will be consumed)
+ * - `server`: QuicServer pointer (nullable, required for Server/Bidirectional modes, will be consumed)
+ * - `result`: Result output structure
+ *
+ * # Returns
+ * - 0 on success (result.data contains endpoint pointer)
+ * - Error code on failure (result.error contains error details)
+ *
+ * # Mode Requirements
+ * - ClientOnly: client required, server must be null
+ * - ServerOnly: server required, client must be null
+ * - Bidirectional: both client and server must be provided
+ *
+ * # Safety
+ * - config and result must be valid pointers
+ * - client/server must be valid or null based on mode
+ * - client/server will be consumed and must not be used after this call
+ */
+int32_t dart_quic_endpoint_create(const struct QuicFfiEndpointConfig *config,
+                                  const struct QuicFfiClientConfig *client_config,
+                                  const struct QuicFfiServerConfig *server_config,
+                                  struct QuicFfiResult *result);
+
+/**
+ * Free an endpoint and close all connections
+ *
+ * # Parameters
+ * - `endpoint`: Endpoint pointer to free
+ *
+ * # Safety
+ * - endpoint must be a valid pointer created by dart_quic_endpoint_create
+ * - Must not be used after this call
+ */
+void dart_quic_endpoint_free(struct QuicEndpoint *endpoint);
+
+/**
+ * Connect to a remote server (async)
+ *
+ * # Parameters
+ * - `executor`: Executor pointer for async operations
+ * - `endpoint`: Endpoint pointer
+ * - `server_addr`: Server address string (e.g., "127.0.0.1:4433")
+ * - `server_name`: Server name for SNI (e.g., "localhost")
+ * - `callback`: Callback invoked with connection pointer (or 0 on error)
+ *
+ * # Safety
+ * - All pointers must be valid
+ * - Endpoint must have client capability (ClientOnly or Bidirectional mode)
+ * - server_addr and server_name must be valid null-terminated C strings
+ */
+void dart_quic_endpoint_connect(struct QuicExecutor *executor,
+                                struct QuicEndpoint *endpoint,
+                                const int8_t *server_addr,
+                                const int8_t *server_name,
+                                UsizeCallback callback);
+
+/**
+ * Accept an incoming connection (async)
+ *
+ * # Parameters
+ * - `executor`: Executor pointer for async operations
+ * - `endpoint`: Endpoint pointer
+ * - `callback`: Callback invoked with connection pointer (or 0 on error/close)
+ *
+ * # Returns
+ * - Connection pointer on success
+ * - 0 if endpoint is closing or on error
+ *
+ * # Safety
+ * - All pointers must be valid
+ * - Endpoint must have server capability (ServerOnly or Bidirectional mode)
+ */
+void dart_quic_endpoint_accept(struct QuicExecutor *executor,
+                               struct QuicEndpoint *endpoint,
+                               UsizeCallback callback);
+
+/**
+ * Get the local bound address of the endpoint
+ *
+ * # Parameters
+ * - `endpoint`: Endpoint pointer
+ * - `out_ip`: Output buffer for IP address (network byte order)
+ * - `out_port`: Output buffer for port (host byte order)
+ *
+ * # Returns
+ * - 0 on success
+ * - Non-zero error code on failure
+ *
+ * # Safety
+ * - endpoint must be a valid pointer
+ * - out_ip and out_port must be valid pointers
+ */
+int32_t dart_quic_endpoint_local_addr(struct QuicEndpoint *endpoint,
+                                      uint32_t *out_ip,
+                                      uint16_t *out_port);
+
+/**
+ * Get the number of currently open connections
+ *
+ * # Parameters
+ * - `endpoint`: Endpoint pointer
+ *
+ * # Returns
+ * - Number of open connections
+ * - 0 if endpoint is null
+ */
+uintptr_t dart_quic_endpoint_open_connections(struct QuicEndpoint *endpoint);
+
+/**
+ * Check if endpoint has client capability
+ *
+ * # Parameters
+ * - `endpoint`: Endpoint pointer
+ *
+ * # Returns
+ * - 1 if endpoint can connect to remote servers
+ * - 0 otherwise
+ */
+int32_t dart_quic_endpoint_can_connect(struct QuicEndpoint *endpoint);
+
+/**
+ * Check if endpoint has server capability
+ *
+ * # Parameters
+ * - `endpoint`: Endpoint pointer
+ *
+ * # Returns
+ * - 1 if endpoint can accept incoming connections
+ * - 0 otherwise
+ */
+int32_t dart_quic_endpoint_can_accept(struct QuicEndpoint *endpoint);
+
+/**
+ * Close the endpoint and all connections gracefully
+ *
+ * # Parameters
+ * - `endpoint`: Endpoint pointer
+ * - `error_code`: Application error code
+ * - `reason`: Reason bytes (nullable)
+ * - `reason_len`: Length of reason bytes
+ *
+ * # Safety
+ * - endpoint must be a valid pointer
+ * - reason must be valid for reason_len bytes if not null
+ */
+void dart_quic_endpoint_close(struct QuicEndpoint *endpoint,
+                              uint32_t error_code,
+                              const uint8_t *reason,
+                              uintptr_t reason_len);
+
+/**
+ * Wait for all connections to close (async)
+ *
+ * # Parameters
+ * - `executor`: Executor pointer for async operations
+ * - `endpoint`: Endpoint pointer
+ * - `callback`: Callback invoked when all connections are closed
+ *
+ * # Safety
+ * - All pointers must be valid
+ * - Should be called after dart_quic_endpoint_close
+ */
+void dart_quic_endpoint_wait_idle(struct QuicExecutor *executor,
+                                  struct QuicEndpoint *endpoint,
+                                  VoidCallback callback);
+
+/**
+ * Create QUIC client asynchronously (required when tokio runtime is managed by executor)
+ *
+ * This function must be called after `dart_quic_executor_init` because it needs
+ * to run inside the tokio runtime context.
+ *
+ * # Safety
+ * The `config` pointer and all data it references must remain valid until the callback is invoked.
+ *
+ * Returns error code. Callback receives client pointer (as usize) on success.
+ */
+int32_t dart_quic_client_new_async(struct QuicExecutor *executor,
+                                   const struct QuicFfiClientConfig *config,
+                                   UsizeCallback callback);
+
+/**
+ * Free client
+ */
+void dart_quic_client_free(struct QuicClient *client);
+
+/**
+ * Close client (sync)
+ * Returns error code
+ */
+int32_t dart_quic_client_close(struct QuicClient *client,
+                               uint32_t error_code,
+                               const uint8_t *reason,
+                               uintptr_t reason_len);
+
+/**
+ * Connect to server asynchronously
+ *
+ * Callback receives QuicConnectionHandle pointer on success.
+ * The handle contains:
+ * - connection pointer (for subsequent operations)
+ * - stable_id (connection ID)
+ * - remote_addr (remote address string)
+ *
+ * Use `dart_quic_connection_handle_free` to free the handle.
+ */
+void dart_quic_client_connect(struct QuicExecutor *executor,
+                              struct QuicClient *client,
+                              const char *server_addr,
+                              const char *server_name,
+                              UsizeCallback callback);
+
+/**
+ * Wait for client to become idle
+ */
+void dart_quic_client_wait_idle(struct QuicExecutor *executor,
+                                struct QuicClient *client,
+                                VoidCallback callback);
+
+/**
+ * Free connection handle and its resources
+ *
+ * This frees:
+ * - The connection itself
+ * - The remote address string
+ * - The handle structure
+ */
+void dart_quic_connection_handle_free(struct QuicConnectionHandle *handle);
+
+/**
+ * Close connection (sync)
+ *
+ * # Parameters
+ * - `handle`: Connection handle
+ * - `error_code`: Application error code
+ * - `reason`: Close reason bytes (nullable)
+ * - `reason_len`: Length of reason bytes
+ */
+void dart_quic_connection_close(struct QuicConnectionHandle *handle,
+                                uint32_t error_code,
+                                const uint8_t *reason,
+                                uintptr_t reason_len);
+
+/**
+ * Open bidirectional stream
+ *
+ * Returns QuicFfiStreamPair structure pointer via UsizeCallback.
+ *
+ * # Parameters
+ * - `executor`: Executor for async operations
+ * - `handle`: Connection handle
+ * - `callback`: Callback receiving stream pair pointer
+ */
+void dart_quic_connection_open_bi(struct QuicExecutor *executor,
+                                  struct QuicConnectionHandle *handle,
+                                  UsizeCallback callback);
+
+/**
+ * Open unidirectional stream (send only)
+ *
+ * Returns QuicFfiStreamPair structure pointer via UsizeCallback.
+ */
+void dart_quic_connection_open_uni(struct QuicExecutor *executor,
+                                   struct QuicConnectionHandle *handle,
+                                   UsizeCallback callback);
+
+/**
+ * Accept bidirectional stream
+ *
+ * Returns QuicFfiStreamPair structure pointer via UsizeCallback.
+ */
+void dart_quic_connection_accept_bi(struct QuicExecutor *executor,
+                                    struct QuicConnectionHandle *handle,
+                                    UsizeCallback callback);
+
+/**
+ * Accept unidirectional stream (recv only)
+ *
+ * Returns QuicFfiStreamPair structure pointer via UsizeCallback.
+ */
+void dart_quic_connection_accept_uni(struct QuicExecutor *executor,
+                                     struct QuicConnectionHandle *handle,
+                                     UsizeCallback callback);
+
+/**
+ * Send datagram (sync, unreliable)
+ *
+ * # Parameters
+ * - `handle`: Connection handle
+ * - `data`: Data to send
+ * - `data_len`: Length of data
+ *
+ * # Returns
+ * - QuicResult::Success on success
+ * - Error code on failure
+ */
+int32_t dart_quic_connection_send_datagram(struct QuicConnectionHandle *handle,
+                                           const uint8_t *data,
+                                           uintptr_t data_len);
+
+/**
+ * Read datagram (async)
+ *
+ * # Parameters
+ * - `executor`: Executor for async operations
+ * - `handle`: Connection handle
+ * - `callback`: Callback receiving datagram data
+ */
+void dart_quic_connection_read_datagram(struct QuicExecutor *executor,
+                                        struct QuicConnectionHandle *handle,
+                                        BytesCallback callback);
+
+/**
+ * Create server with self-signed certificate (testing only!)
+ * Returns error code, result written to `result` parameter
+ */
+int32_t dart_quic_server_new_self_signed(const char *bind_addr,
+                                         const char *const *san_list,
+                                         uintptr_t san_count,
+                                         const struct QuicFfiTransportConfig *transport_config,
+                                         struct QuicFfiResult *result);
+
+/**
+ * Create server with PEM certificate files
+ * Returns error code, result written to `result` parameter
+ */
+int32_t dart_quic_server_new_with_cert_files(const char *bind_addr,
+                                             const char *cert_path,
+                                             const char *key_path,
+                                             const struct QuicFfiTransportConfig *transport_config,
+                                             struct QuicFfiResult *result);
+
+/**
+ * Free server
+ */
+void dart_quic_server_free(struct QuicServer *server);
+
+/**
+ * Close server
+ */
+void dart_quic_server_close(struct QuicServer *server,
+                            uint32_t error_code,
+                            const uint8_t *reason,
+                            uintptr_t reason_len);
+
+/**
+ * Get server local address
+ */
+bool dart_quic_server_local_addr(struct QuicServer *server, uint8_t **addr_out, uintptr_t *len_out);
+
+/**
+ * Accept incoming connection
+ *
+ * Callback receives QuicConnectionHandle pointer on success.
+ * The handle contains:
+ * - connection pointer (for subsequent operations)
+ * - stable_id (connection ID)
+ * - remote_addr (remote address string)
+ *
+ * Use `dart_quic_connection_handle_free` to free the handle.
+ */
+void dart_quic_server_accept(struct QuicExecutor *executor,
+                             struct QuicServer *server,
+                             UsizeCallback callback);
 
 #endif  /* DART_QUIC_FFI_H */

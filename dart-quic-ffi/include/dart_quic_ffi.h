@@ -915,18 +915,19 @@ void dart_quic_endpoint_wait_idle(struct QuicExecutor *executor,
                                   VoidCallback callback);
 
 /**
- * Create QUIC client with unified configuration
+ * Create QUIC client asynchronously (required when tokio runtime is managed by executor)
  *
- * This is the unified API for creating QUIC clients with various configurations:
- * - Trust modes: skip verification, system roots, custom CA (DER/PEM/file)
- * - Client certificates (mTLS): none, DER memory, PEM file, DER file
- * - Transport configuration
- * - Bind address
+ * This function must be called after `dart_quic_executor_init` because it needs
+ * to run inside the tokio runtime context.
  *
- * Returns error code, result written to `result` parameter
+ * # Safety
+ * The `config` pointer and all data it references must remain valid until the callback is invoked.
+ *
+ * Returns error code. Callback receives client pointer (as usize) on success.
  */
-int32_t dart_quic_client_new(const struct QuicFfiClientConfig *config,
-                             struct QuicFfiResult *result);
+int32_t dart_quic_client_new_async(struct QuicExecutor *executor,
+                                   const struct QuicFfiClientConfig *config,
+                                   UsizeCallback callback);
 
 /**
  * Free client

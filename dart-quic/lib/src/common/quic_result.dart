@@ -123,7 +123,7 @@ abstract final class QuicResultCode {
   // ===== Static Methods =====
 
   /// Get the default error message for a result code
-  static String getMessage(int code) {
+  static String getErrorMessage(int code) {
     return _messages[code] ?? 'Unknown error (code: $code)';
   }
 
@@ -191,4 +191,40 @@ abstract final class QuicResultCode {
     fileNotFound: 'File not found',
     formatError: 'Format error',
   };
+}
+
+/// Extension on int to provide convenient QUIC result code operations
+///
+/// This extension allows for a more Dart-idiomatic API when working with result codes.
+///
+/// Example:
+/// ```dart
+/// final resultCode = _bindings.dart_quic_client_new(config, resultPtr);
+/// if (resultCode.isSuccess) {
+///   // Success case
+/// } else {
+///   print('Error: ${resultCode.errotMessage}');
+/// }
+/// ```
+extension QuicResultCodeExtension on int {
+  /// Check if the operation succeeded
+  bool get isSuccess => this == QuicResultCode.success;
+
+  /// Check if the operation failed
+  bool get isFailure => this != QuicResultCode.success;
+
+  /// Get the error message for this result code
+  String get errorMessage => QuicResultCode.getErrorMessage(this);
+
+  /// Check if error is connection-related (codes 100-199)
+  bool get isConnectionError => this >= 100 && this < 200;
+
+  /// Check if error is stream-related (codes 200-299)
+  bool get isStreamError => this >= 200 && this < 300;
+
+  /// Check if error is datagram-related (codes 300-399)
+  bool get isDatagramError => this >= 300 && this < 400;
+
+  /// Check if error is configuration/parameter related (codes 400-499)
+  bool get isConfigError => this >= 400 && this < 500;
 }

@@ -3,7 +3,7 @@ import 'dart:ffi';
 
 import 'package:dart_quic/src/bindings/quic_ffi_bindings.dart';
 
-import '../core/quic_initializer.dart';
+import 'quic_initializer.dart';
 
 class QuicArena implements Allocator {
   /// Native memory under management by this [QuicArena].
@@ -19,7 +19,13 @@ class QuicArena implements Allocator {
   @override
   Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
     _ensureInUse();
+    if (byteCount <= 0) {
+      throw ArgumentError.value(byteCount, 'byteCount', 'Must be positive');
+    }
     final p = _bindings.dart_allocate_memory(byteCount);
+    if (p == nullptr) {
+      throw StateError('Failed to allocate $byteCount bytes');
+    }
     _managedMemoryPointers.add((p, byteCount));
     return p.cast();
   }

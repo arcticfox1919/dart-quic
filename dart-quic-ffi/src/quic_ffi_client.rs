@@ -3,12 +3,12 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use crate::{ERR_NOT_RUNNING, ERR_CONFIG_REQUIRED};
+use crate::ERR_NOT_RUNNING;
 use crate::quic_executor::{
     BytesCallback, UsizeCallback, QuicExecutor, SendableCallback, VoidCallback,
 };
 use crate::quic_ffi_stream_result::QuicFfiStreamPair;
-use crate::{QuicFfiResult, allocate, deallocate, quic, types};
+use crate::{allocate, deallocate, quic, types};
 use crate::quic::QuicConnectionHandle;
 
 use crate::{
@@ -20,35 +20,53 @@ use crate::{
 // QUIC Client FFI
 // ============================================
 
-/// Create QUIC client with unified configuration
+
+/// Create QUIC client asynchronously (required when tokio runtime is managed by executor)
 ///
-/// This is the unified API for creating QUIC clients with various configurations:
-/// - Trust modes: skip verification, system roots, custom CA (DER/PEM/file)
-/// - Client certificates (mTLS): none, DER memory, PEM file, DER file
-/// - Transport configuration
-/// - Bind address
+/// This function must be called after `dart_quic_executor_init` because it needs
+/// to run inside the tokio runtime context.
 ///
-/// Returns error code, result written to `result` parameter
+/// # Safety
+/// The `config` pointer and all data it references must remain valid until the callback is invoked.
+///
+/// Returns error code. Callback receives client pointer (as usize) on success.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn dart_quic_client_new(
+pub unsafe extern "C" fn dart_quic_client_new_async(
+    executor: *mut QuicExecutor,
     config: *const quic::QuicFfiClientConfig,
-    result: *mut QuicFfiResult,
+    callback: UsizeCallback,
 ) -> i32 {
-    if result.is_null() {
+    if executor.is_null() {
         return types::QuicResult::InvalidParameter as i32;
+    }
+    
+    let executor_ref = unsafe { &*executor };
+    if !executor_ref.is_running() {
+        return types::QuicResult::RuntimeError as i32;
     }
 
     if config.is_null() {
-        unsafe {
-            (*result).write_error_str(ERR_CONFIG_REQUIRED);
-        }
         return types::QuicResult::InvalidParameter as i32;
     }
 
-    let ffi_config = unsafe { &*config };
-    let client_result = ffi_config.build();
-
-    unsafe { (*result).write_result(client_result) }
+    let config_ptr = config as usize;
+    let callback = SendableCallback(callback);
+    
+    executor_ref.submit_async(async move {
+        let ffi_config = unsafe { &*(config_ptr as *const quic::QuicFfiClientConfig) };
+        match ffi_config.build() {
+            Ok(client) => {
+                let ptr = Box::into_raw(Box::new(client)) as usize;
+                (callback.0)(true, ptr, std::ptr::null(), 0);
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                (callback.0)(false, 0, msg.as_ptr(), msg.len());
+            }
+        }
+    });
+    
+    types::QuicResult::Success as i32
 }
 
 /// Free client

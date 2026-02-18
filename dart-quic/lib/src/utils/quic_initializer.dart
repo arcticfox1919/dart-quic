@@ -1,12 +1,5 @@
-import 'dart:ffi';
-
 import '../bindings/quic_ffi_bindings.dart';
-import '../utils/library_loader.dart';
-
-typedef _DartPostCObject =
-    Pointer Function(
-      Pointer<NativeFunction<Int8 Function(Int64, Pointer<Dart_CObject>)>>,
-    );
+import 'library_loader.dart';
 
 class QuicInitializer {
   static var _initialized = false;
@@ -18,12 +11,6 @@ class QuicInitializer {
       _initialized = true;
       final dl = LibraryLoader.load();
       _bindings = QuicFFIBindings(dl);
-      // Setup Dart post object function for communication
-      final storeDartPostCObject = dl
-          .lookupFunction<_DartPostCObject, _DartPostCObject>(
-            'store_dart_post_cobject',
-          );
-      storeDartPostCObject(NativeApi.postCObject);
     }
   }
 
@@ -58,7 +45,9 @@ class QuicInitializer {
 
   static bool _check() {
     if (_bindings == null) {
-      throw StateError('');
+      throw StateError(
+        'QuicInitializer not initialized. Call QuicInitializer.initialize() first.',
+      );
     }
     return true;
   }

@@ -3,6 +3,10 @@
 /// A high-performance QUIC client library with Rust FFI backend
 library;
 
-
-
-// TODO: Export any additional libraries for clients of this package.
+export 'src/client/quic_client.dart';
+export 'src/client/quic_client_config.dart';
+export 'src/common/quic_connection.dart';
+export 'src/common/quic_stream.dart';
+export 'src/common/socket_address.dart';
+export 'src/utils/quic_initializer.dart';
+export 'src/utils/library_loader.dart';
